@@ -103,7 +103,7 @@ class FirstPrinciples(object):
         for epoch in epochs:
             slopes.append(self.learning_model.m.numpy())
             y_intercepts.append(self.learning_model.b.numpy())
-            self.train(self.observation_model.inputs, self.observation_model.make_observations(), 0.0001)
+            self.train(self.observation_model.inputs, self.observation_model.make_observations(), 0.00002)
             print('Epoch: {}, Slope: {}, Y-Intercept: {}'.format(epoch, self.learning_model.m.numpy(),
                                                                  self.learning_model.b.numpy()))
         ax.plot(epochs, slopes, 'r', label='Descent Progress of the slope')

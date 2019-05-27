@@ -57,7 +57,6 @@ class CustomLayersAndTraining(object):
             fname=os.path.basename('https://storage.googleapis.com/download.tensorflow.org/data/iris_training.csv'),
             origin='https://storage.googleapis.com/download.tensorflow.org/data/iris_training.csv')
         column_names = ['sepal length', 'sepal width', 'petal length', 'petal width', 'species']
-        feature_names = column_names[:-1]
         label_name = column_names[-1]
         # Generate a dataset from this file
         dataset = tensorflow.contrib.data.make_csv_dataset(file_path, 32, column_names=column_names,
