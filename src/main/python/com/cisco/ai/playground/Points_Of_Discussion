@@ -1,0 +1,13 @@
+Important points to discuss:
+
+1. How do you propose we run our models - do we have a in-house GPU w/ CUDA, or do you suggest we use Google Cloud w/ Python?
+2. Developed a next word prediction tool using LSTMs
+3. Developed a text sequence generator using GRU
+4 Kinds of regularization to employ - L1/L2, Dropout
+5. Basic Text and Image classification
+6. Basic Regression Modelling
+7. TensorFlow Estimators and BoostedTrees
+8. Basic Gradient Descent using pure TensorFlow
+9. Deep Convolutional Generative Adversarial Networks for discrimination between real and generated handwritten images
+10. Convolutional Variational Auto-Encoder for writing handwritten digits
+11. Convolutional Neural Networks for Handwriting Recognition (recognize digits based on pixel values - classification)
