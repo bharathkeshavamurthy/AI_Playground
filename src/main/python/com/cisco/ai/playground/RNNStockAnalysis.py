@@ -25,6 +25,7 @@ plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPi
 
 # This class predicts the closing stock price of a company leveraging capabilities of RNNs in the...
 # ...high-level Keras API within TensorFlow
+# Inspired by Language Modelling
 class RNNStockAnalysis(object):
     # The column key for the date attribute
     DATE_COLUMN_KEY = 'Date'
@@ -151,6 +152,8 @@ class RNNStockAnalysis(object):
                                                   batch_input_shape=[batch_size,
                                                                      None]),
                 # The Recurrent Neural Network - use GRU or LSTM units
+                # GRUs are used here because structurally they're simpler and hence take smaller training times
+                # Also, they don't have a forget gate in them, so they expose the entire memory during their operation
                 custom_gru(self.NUMBER_OF_RNN_UNITS,
                            return_sequences=True,
                            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
