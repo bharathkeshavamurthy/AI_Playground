@@ -135,14 +135,21 @@ class RNNStockAnalysis(object):
                                                                                     drop_remainder=True)
         # The model
         self.model = None
+        # GPU Availability
+        self.gpu_availability = tensorflow.test.is_gpu_available()
+        print('[INFO] RNNStockAnalysis Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
 
     # Build the model using RNN layers from Keras
     def build(self, initial_build=True, batch_size=None):
         try:
             batch_size = (lambda: self.BATCH_SIZE, lambda: batch_size)[initial_build is False]()
-            # Develop a modified RNN layer by using functools.partial
-            custom_gru = functools.partial(tensorflow.keras.layers.GRU,
-                                           recurrent_activation='sigmoid')
+            # GPU - CuDNNGRU: The NVIDIA Compute Unified Device Architecture (CUDA) based Deep Neural Network library...
+            # ... is a GPU accelerated library of primitives for Deep Neural Networks. CuDNNGRU is a fast GRU impl...
+            # within the CuDNN framework.
+            # CPU - Develop a modified RNN layer by using functools.partial
+            custom_gru = (lambda: functools.partial(tensorflow.keras.layers.GRU,
+                                                    recurrent_activation='sigmoid'),
+                          lambda: tensorflow.keras.layers.CuDNNGRU)[self.gpu_availability]()
             # Construct the model sequentially
             model = tensorflow.keras.Sequential([
                 # The Embedding Layer
