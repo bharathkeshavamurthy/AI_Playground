@@ -56,7 +56,7 @@ class RNNStockAnalysis(object):
     LOOK_AHEAD_SIZE = 464
 
     # The size of the projected vector space
-    # A lower dimensional, dense, continuous vector space (factor of 0.1)
+    # A lower dimensional, dense, continuous vector space
     PROJECTED_VECTOR_SIZE = 910
 
     # The checkpoint directory
