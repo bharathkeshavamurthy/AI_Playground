@@ -7,6 +7,7 @@
 
 # The imports
 import os
+import time
 import numpy
 import plotly
 # import traceback
@@ -84,6 +85,8 @@ class RNNStockAnalysis(object):
         # The standard checkpoint naming convention checkpoint_{epoch_number}
         self.checkpoint_prefix = os.path.join(self.CHECKPOINT_DIRECTORY,
                                               'checkpoint_{epoch}')
+        # The standard tensorboard logging convention
+        self.tensorboard_logging_identifier = 'tensorboard-logs/{}'
         # The pragmatic stock price limits and precision are encapsulated in a namedtuple
         # This parameterizes the available vocabulary
         self.pragmatic_stock_information = self.PRAGMATIC_STOCK_PRICE_LIMITS(lower_limit=self.LOWER_LIMIT,
@@ -223,11 +226,14 @@ class RNNStockAnalysis(object):
             checkpoint_callback = tensorflow.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_prefix,
                                                                              save_weights_only=True,
                                                                              verbose=1)
+            # Tensorboard callback
+            tensorboard = tensorflow.keras.callbacks.TensorBoard(log_dir=self.tensorboard_logging_identifier.format(
+                time.time()))
             # Visualize the progression of the cost function during training
             training_history = self.model.fit(self.split_dataset.repeat(),
                                               epochs=self.NUMBER_OF_TRAINING_EPOCHS,
                                               steps_per_epoch=len(self.training_data),
-                                              callbacks=[checkpoint_callback])
+                                              callbacks=[checkpoint_callback, tensorboard])
             training_trace = go.Scatter(x=training_history.epoch,
                                         y=training_history.history[self.COST_METRIC],
                                         mode=self.PLOTLY_SCATTER_MODE)

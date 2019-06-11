@@ -62,10 +62,10 @@ class AdvancedRNNStockAnalysis(object):
     PROJECTED_VECTOR_SIZE = 910
 
     # The checkpoint directory
-    CHECKPOINT_DIRECTORY = './checkpoints'
+    CHECKPOINT_DIRECTORY = './checkpoints-advanced'
 
     # The number of training epochs
-    NUMBER_OF_TRAINING_EPOCHS = 100
+    NUMBER_OF_TRAINING_EPOCHS = 5000
 
     # The number of RNN units
     NUMBER_OF_RNN_UNITS = 1300
