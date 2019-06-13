@@ -156,6 +156,7 @@ class ModelEvaluation(object):
                                                                         batch_size=512, epochs=20, verbose=1,
                                                                         validation_data=(self.test_data,
                                                                                          self.test_labels))
+        self.baseline_dropout_model.summary()
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):

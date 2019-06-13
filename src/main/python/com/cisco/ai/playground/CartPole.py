@@ -13,7 +13,7 @@ from collections import deque
 CARTPOLE_GAME_ID = 'CartPole-v0'
 
 # The number of episodes
-NUMBER_OF_EPISODES = 1000
+NUMBER_OF_EPISODES = 10000
 
 # The maximum optimal score threshold
 MAXIMUM_SCORE_THRESHOLD = 500
@@ -25,7 +25,7 @@ BATCH_SIZE = 32
 # This class describes an agent to play the CartPole game efficiently
 class CartPole(object):
     # The memory capacity of the agent
-    MEMORY_SIZE = 2000
+    MEMORY_SIZE = 20000
 
     # The initialization sequence
     def __init__(self, state_size, action_size):
@@ -43,9 +43,9 @@ class CartPole(object):
         # The exploration factor - start off big, then decay it down to epsilon_min
         self.epsilon = 1.0
         # The epsilon decay factor for transitioning from exploration to exploitation as the model improves
-        self.epsilon_decay = 0.8
+        self.epsilon_decay = 0.6
         # The minimum amount of exploration needed
-        self.epsilon_min = 0.01
+        self.epsilon_min = 0.001
         # The learning rate
         self.alpha = 0.01
         # The discount factor

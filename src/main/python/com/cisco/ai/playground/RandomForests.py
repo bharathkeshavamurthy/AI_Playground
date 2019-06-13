@@ -1,4 +1,4 @@
-# This entity describes the design of RandomForests and how they can be used to determine feature importance
+# This entity describes the design of RandomForests and how they can be used to determine feature importances.
 # Author: Bharath Keshavamurthy
 # Organization: CISCO Systems, Inc
 # Copyright (c) 2019. All Rights Reserved.
@@ -15,7 +15,7 @@ from sklearn.ensemble import RandomForestClassifier
 warnings.filterwarnings('ignore')
 
 
-# This class encapsulates the design of Random Forests for a classification tasks and then, leverage the capabilities...
+# This class encapsulates the design of Random Forests for a classification task and leverages the capabilities...
 # ...of these Random Forests to determine feature importances
 class RandomForests(object):
     # Use ${TRAINING_SPLIT} * 100% of the data for training and the remaining for testing and/or validation
@@ -25,7 +25,7 @@ class RandomForests(object):
     def __init__(self):
         print('[INFO] RandomForests Initialization: Bringing things up...')
         # Read the dataset
-        self.dataframe = pandas.read_csv('datasets/bank.csv')
+        self.dataframe = pandas.read_csv('datasets/housing.csv')
         # Rename the columns for aesthetics
         self.dataframe.columns = ['Age', 'Job', 'Marital-Status', 'Education', 'Default', 'Balance', 'Housing',
                                   'Loan', 'Contact', 'Day', 'Month', 'Duration', 'Campaign', 'PayDays', 'Previous',
