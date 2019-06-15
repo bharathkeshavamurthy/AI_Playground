@@ -57,16 +57,19 @@ class RNNStockAnalysis(object):
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 910
+    PROJECTED_VECTOR_SIZE = 1300
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of training epochs
-    NUMBER_OF_TRAINING_EPOCHS = 10
+    NUMBER_OF_TRAINING_EPOCHS = 3000
+
+    # The checkpoint trigger factor
+    CHECKPOINT_TRIGGER_FACTOR = 100
 
     # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 1300
+    NUMBER_OF_RNN_UNITS = 2600
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6500
@@ -111,7 +114,6 @@ class RNNStockAnalysis(object):
         # Rename the columns for aesthetics
         dataframe.columns = [self.DATE_COLUMN_KEY,
                              self.CLOSING_STOCK_PRICE_COLUMN_KEY]
-        dataframe = dataframe.round({self.CLOSING_STOCK_PRICE_COLUMN_KEY: precision_cutoff})
         # Extract the attributes
         self.dates = dataframe[self.DATE_COLUMN_KEY]
         self.stock_prices = dataframe[self.CLOSING_STOCK_PRICE_COLUMN_KEY].apply(
@@ -125,14 +127,15 @@ class RNNStockAnalysis(object):
                                             yaxis=dict(title='Closing Stock Price'))
         initial_visualization_fig = dict(data=[initial_visualization_trace],
                                          layout=initial_visualization_layout)
-        initial_fig_url = plotly.plotly.iplot(initial_visualization_fig,
-                                              filename='CISCO_Variations_In_Stock_Price')
+        initial_fig_url = plotly.plotly.plot(initial_visualization_fig,
+                                             filename='CISCO_Variations_In_Stock_Price')
         print('[INFO] RNNStockAnalysis Initialization: Data Visualization Figure is available at {}'.format(
-            initial_fig_url.resource))
+            initial_fig_url
+        ))
         # The data set for training - [0, 6500)
         self.stock_prices_training = self.stock_prices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
-        self.training_data = [self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training]
+        self.training_data = numpy.array([self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training])
         # The data set for testing - [6500 6964)
         self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:]
         self.stock_prices_testing = self.stock_prices.values[self.TRAINING_DATA_LIMIT:]
@@ -152,7 +155,7 @@ class RNNStockAnalysis(object):
         print('[INFO] RNNStockAnalysis Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
 
     # Build the model using RNN layers from Keras
-    def build(self, initial_build=True, batch_size=None):
+    def build_model(self, initial_build=True, batch_size=None):
         try:
             batch_size = (lambda: self.BATCH_SIZE, lambda: batch_size)[initial_build is False]()
             # GPU - CuDNNGRU: The NVIDIA Compute Unified Device Architecture (CUDA) based Deep Neural Network library...
@@ -224,15 +227,19 @@ class RNNStockAnalysis(object):
             # TODO: Add a logging hook as a callback and include it in the 'callbacks' collection within the fit routine
             # Checkpoint feature callback
             checkpoint_callback = tensorflow.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_prefix,
+                                                                             monitor='loss',
                                                                              save_weights_only=True,
-                                                                             verbose=1)
+                                                                             save_best_only=True,
+                                                                             verbose=1,
+                                                                             mode='min',
+                                                                             period=self.CHECKPOINT_TRIGGER_FACTOR)
             # Tensorboard callback
             tensorboard = tensorflow.keras.callbacks.TensorBoard(log_dir=self.tensorboard_logging_identifier.format(
                 time.time()))
             # Visualize the progression of the cost function during training
             training_history = self.model.fit(self.split_dataset.repeat(),
                                               epochs=self.NUMBER_OF_TRAINING_EPOCHS,
-                                              steps_per_epoch=len(self.training_data),
+                                              steps_per_epoch=self.BATCH_SIZE,
                                               callbacks=[checkpoint_callback, tensorboard])
             training_trace = go.Scatter(x=training_history.epoch,
                                         y=training_history.history[self.COST_METRIC],
@@ -244,10 +251,10 @@ class RNNStockAnalysis(object):
                 yaxis=dict(title='Sparse Categorical Cross-Entropy'))
             training_figure = dict(data=training_data_trace,
                                    layout=training_layout)
-            cost_progression_fig_url = plotly.plotly.iplot(training_figure,
-                                                           filename='Cost_Progression_Visualization_Training')
+            cost_progression_fig_url = plotly.plotly.plot(training_figure,
+                                                          filename='Cost_Progression_Visualization_Training')
             print('[INFO] RNNStockAnalysis train: Cost Progression Visualization Figure available at {}'.format(
-                cost_progression_fig_url.resource
+                cost_progression_fig_url
             ))
             return True, training_history
         except Exception as e:
@@ -260,9 +267,12 @@ class RNNStockAnalysis(object):
     def predict(self):
         # The output to be returned
         predicted_prices = []
+        # GPU Availability - Check again
+        self.gpu_availability = tensorflow.test.is_gpu_available()
+        print('[INFO] RNNStockAnalysis Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
         # Modify the model for a batch size of 1
-        status, modified_model = self.build(initial_build=False,
-                                            batch_size=1)
+        status, modified_model = self.build_model(initial_build=False,
+                                                  batch_size=1)
         if status is False:
             print('[ERROR] RNNStockAnalysis predict: The operation failed due to previous errors!')
             return
@@ -270,8 +280,10 @@ class RNNStockAnalysis(object):
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
-            trigger = tensorflow.expand_dims(
-                self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:], 0)
+            # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
+            # ... of the test dataset
+            cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
+            trigger = tensorflow.expand_dims(cumulative_context, 0)
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
@@ -281,9 +293,14 @@ class RNNStockAnalysis(object):
                 prediction = tensorflow.squeeze(prediction, 0)
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
-                # Add the predicted price to the context which would be used for the next iteration
-                trigger = tensorflow.expand_dims([predicted_price], 0)
+                # Append the predicted value to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
+                # Context modification logic
+                # Add the predicted price to the context which would be used for the next iteration
+                cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
+                # Move the context window to include the latest prediction and discount the oldest contextual element
+                cumulative_context = cumulative_context[1:]
+                trigger = tensorflow.expand_dims(cumulative_context, 0)
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
@@ -313,10 +330,10 @@ def visualize_predictions(obj, _true_values, _predicted_values):
                                  yaxis=dict(title='Closing Stock Price'))
     final_analysis_figure = dict(data=[real_final_analysis_trace, generated_final_analysis_trace],
                                  layout=final_analysis_layout)
-    final_analysis_url = plotly.plotly.iplot(final_analysis_figure,
-                                             filename='Prediction_Analysis_Test_Dataset')
+    final_analysis_url = plotly.plotly.plot(final_analysis_figure,
+                                            filename='Prediction_Analysis_Test_Dataset')
     print('[INFO] RNNStockAnalysis visualize_predictions: The final prediction analysis visualization figure is '
-          'available at {}'.format(final_analysis_url.resource))
+          'available at {}'.format(final_analysis_url))
     return None
 
 
@@ -325,7 +342,7 @@ if __name__ == '__main__':
     print('[INFO] RNNStockAnalysis Trigger: Starting system assessment!')
     rnnStockAnalysis = RNNStockAnalysis()
     # TODO: Use an ETL-type pipeline for this sequence of operations on the model
-    if rnnStockAnalysis.build()[0] and rnnStockAnalysis.compile() and rnnStockAnalysis.train()[0]:
+    if rnnStockAnalysis.build_model()[0] and rnnStockAnalysis.compile() and rnnStockAnalysis.train()[0]:
         print('[INFO] RNNStockAnalysis Trigger: The model has been built, compiled, and trained! '
               'Evaluating the model...')
         visualize_predictions(rnnStockAnalysis,

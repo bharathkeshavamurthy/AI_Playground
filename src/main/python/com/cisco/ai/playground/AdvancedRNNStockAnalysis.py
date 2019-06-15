@@ -58,8 +58,8 @@ class AdvancedRNNStockAnalysis(object):
     LOOK_AHEAD_SIZE = 464
 
     # The size of the projected vector space
-    # A lower dimensional, dense, continuous vector space (factor of 0.1)
-    PROJECTED_VECTOR_SIZE = 910
+    # A lower dimensional, dense, continuous vector space
+    PROJECTED_VECTOR_SIZE = 1300
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints-advanced'
@@ -68,7 +68,7 @@ class AdvancedRNNStockAnalysis(object):
     NUMBER_OF_TRAINING_EPOCHS = 5000
 
     # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 1300
+    NUMBER_OF_RNN_UNITS = 2600
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6500
@@ -111,7 +111,6 @@ class AdvancedRNNStockAnalysis(object):
         # Rename the columns for aesthetics
         dataframe.columns = [self.DATE_COLUMN_KEY,
                              self.CLOSING_STOCK_PRICE_COLUMN_KEY]
-        dataframe = dataframe.round({self.CLOSING_STOCK_PRICE_COLUMN_KEY: precision_cutoff})
         # Extract the attributes
         self.dates = dataframe[self.DATE_COLUMN_KEY]
         self.stock_prices = dataframe[self.CLOSING_STOCK_PRICE_COLUMN_KEY].apply(
@@ -132,7 +131,7 @@ class AdvancedRNNStockAnalysis(object):
         # The data set for training - [0, 6500)
         self.stock_prices_training = self.stock_prices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
-        self.training_data = [self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training]
+        self.training_data = numpy.array([self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training])
         # The data set for testing - [6500 6964)
         self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:]
         self.stock_prices_testing = self.stock_prices.values[self.TRAINING_DATA_LIMIT:]
@@ -152,7 +151,7 @@ class AdvancedRNNStockAnalysis(object):
         print('[INFO] AdvancedRNNStockAnalysis Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
 
     # Build the model using RNN layers from Keras
-    def build(self, initial_build=True, batch_size=None):
+    def build_model(self, initial_build=True, batch_size=None):
         try:
             batch_size = (lambda: self.BATCH_SIZE, lambda: batch_size)[initial_build is False]()
             # GPU - CuDNNGRU: The NVIDIA Compute Unified Device Architecture (CUDA) based Deep Neural Network library...
@@ -244,18 +243,22 @@ class AdvancedRNNStockAnalysis(object):
     def predict(self):
         # The output to be returned
         predicted_prices = []
+        # GPU Availability - Check again
+        self.gpu_availability = tensorflow.test.is_gpu_available()
         # Modify the model for a batch size of 1
-        status, modified_model = self.build(initial_build=False,
-                                            batch_size=1)
+        status, modified_model = self.build_model(initial_build=False,
+                                                  batch_size=1)
         if status is False:
-            print('[ERROR] AdvancedRNNStockAnalysis predict: The operation failed due to previous errors!')
+            print('[ERROR] RNNStockAnalysis predict: The operation failed due to previous errors!')
             return
         try:
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
-            trigger = tensorflow.expand_dims(
-                self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:], 0)
+            # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
+            # ... of the test dataset
+            cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
+            trigger = tensorflow.expand_dims(cumulative_context, 0)
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
@@ -265,9 +268,14 @@ class AdvancedRNNStockAnalysis(object):
                 prediction = tensorflow.squeeze(prediction, 0)
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
-                # Add the predicted price to the context which would be used for the next iteration
-                trigger = tensorflow.expand_dims([predicted_price], 0)
+                # Append the predicted value to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
+                # Context modification logic
+                # Add the predicted price to the context which would be used for the next iteration
+                cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
+                # Move the context window to include the latest prediction and discount the oldest contextual element
+                cumulative_context = cumulative_context[1:]
+                trigger = tensorflow.expand_dims(cumulative_context, 0)
         except Exception as e:
             print('[ERROR] AdvancedRNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
@@ -309,7 +317,7 @@ if __name__ == '__main__':
     print('[INFO] AdvancedRNNStockAnalysis Trigger: Starting system assessment!')
     rnnStockAnalysis = AdvancedRNNStockAnalysis()
     # Build the model
-    if rnnStockAnalysis.build()[0]:
+    if rnnStockAnalysis.build_model()[0]:
         # Compile and Train the model
         if rnnStockAnalysis.advanced_training():
             print('[INFO] AdvancedRNNStockAnalysis Trigger: The model has been built, compiled, and trained! '
