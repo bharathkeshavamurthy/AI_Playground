@@ -81,7 +81,6 @@ class ProjectionGradientDescent(object):
             # No Projection
             return True, 0, oob_point
 
-
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
         print('[INFO] ProjectionGradientDescent Termination: Tearing things down...')
