@@ -124,10 +124,11 @@ class AdvancedRNNStockAnalysis(object):
                                             yaxis=dict(title='Closing Stock Price'))
         initial_visualization_fig = dict(data=[initial_visualization_trace],
                                          layout=initial_visualization_layout)
-        initial_fig_url = plotly.plotly.iplot(initial_visualization_fig,
-                                              filename='CISCO_Variations_In_Stock_Price')
+        initial_fig_url = plotly.plotly.plot(initial_visualization_fig,
+                                             filename='CISCO_Variations_In_Stock_Price')
         print('[INFO] AdvancedRNNStockAnalysis Initialization: Data Visualization Figure is available at {}'.format(
-            initial_fig_url.resource))
+            initial_fig_url
+        ))
         # The data set for training - [0, 6500)
         self.stock_prices_training = self.stock_prices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
@@ -305,10 +306,10 @@ def visualize_predictions(obj, _true_values, _predicted_values):
                                  yaxis=dict(title='Closing Stock Price'))
     final_analysis_figure = dict(data=[real_final_analysis_trace, generated_final_analysis_trace],
                                  layout=final_analysis_layout)
-    final_analysis_url = plotly.plotly.iplot(final_analysis_figure,
-                                             filename='Prediction_Analysis_Test_Dataset')
+    final_analysis_url = plotly.plotly.plot(final_analysis_figure,
+                                            filename='Prediction_Analysis_Test_Dataset')
     print('[INFO] AdvancedRNNStockAnalysis visualize_predictions: The final prediction analysis visualization figure '
-          'is available at {}'.format(final_analysis_url.resource))
+          'is available at {}'.format(final_analysis_url))
     return None
 
 
