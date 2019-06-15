@@ -249,7 +249,7 @@ class AdvancedRNNStockAnalysis(object):
         status, modified_model = self.build_model(initial_build=False,
                                                   batch_size=1)
         if status is False:
-            print('[ERROR] RNNStockAnalysis predict: The operation failed due to previous errors!')
+            print('[ERROR] AdvancedRNNStockAnalysis predict: The operation failed due to previous errors!')
             return
         try:
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
