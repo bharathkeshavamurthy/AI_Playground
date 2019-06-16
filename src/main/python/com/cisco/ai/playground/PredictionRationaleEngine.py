@@ -7,6 +7,7 @@
 # The imports
 import math
 import numpy
+import plotly
 import pandas
 import random
 import traceback
@@ -19,7 +20,7 @@ from collections import namedtuple
 class ProjectionGradientDescent(object):
 
     # The initialization sequence
-    def __init__(self, _dimensionality, _intercept_constraint):
+    def __init__(self, _dimensionality, _intercept_constraint, _rationale_engine):
         # The initialization status flag
         self.status = False
         print('[INFO] ProjectionGradientDescent Initialization: Bringing things up...')
@@ -31,6 +32,8 @@ class ProjectionGradientDescent(object):
             return
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
+        # The initial weights [\theta_0 \theta_1]
+        self.initial_weights = (0, 0)
         # The intercept constraint in the given linear inequality constraint
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -47,6 +50,9 @@ class ProjectionGradientDescent(object):
         self.confidence_bound = 10
         # The maximum number of iterations allowed during training
         self.max_iterations = 1e6
+        # The rationaleEngine for loss function evaluation
+        self.rationale_engine = _rationale_engine
+        # The initialization has been completed...
 
     # Vector Projection utility routine
     # Return the distance and the closest point w.r.t to that specific line segment
@@ -80,6 +86,80 @@ class ProjectionGradientDescent(object):
         else:
             # No Projection
             return True, 0, oob_point
+
+    # The main projection wrapper routine
+    def projection(self, oob_point):
+        # A collection to house the output tuples of the vector projection routine
+        vector_projection_output_tuples_collection = []
+        # A namedtuple for cleaner storage
+        vector_projection_output_tuple = namedtuple('output_tuple',
+                                                    ['distance', 'closest_point'])
+        for line_segment in self.line_segments:
+            # Perform vector projection of the operand vector (oob_point) with respect to the current line_segment
+            status_flag, distance, closest_point = self.vector_projection(oob_point, line_segment)
+            # No errors during the vector projection operation
+            if status_flag:
+                vector_projection_output_tuples_collection.append(
+                    vector_projection_output_tuple(distance=distance,
+                                                   closest_point=closest_point))
+        return min(vector_projection_output_tuples_collection,
+                   key=lambda x: x.distance).closest_point
+
+    # The convergence check for the Projection Gradient Descent algorithm
+    def convergence_check(self, previous_point, current_point):
+        if previous_point is not None and previous_point == current_point:
+            x_projected_point, y_projected_point = self.projection(current_point)
+            # Check if the projection of the point is the point itself
+            if (x_projected_point, y_projected_point) == current_point:
+                return True
+        return False
+
+    # The main optimization routine
+    def optimize(self, _step_size):
+        # Pick the step size
+        step_size = (lambda: self.default_step_size,
+                     lambda: _step_size)[_step_size is not None]()
+        previous_point = None
+        current_point = self.initial_weights
+        confidence = 0
+        iteration_count = 0
+        # Limit the number of iterations allowed
+        # Enable confidence check for convergence
+        # Make a standard convergence check for the projection operation [x]^{+} = x = x^{*}
+        while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound) and (
+                self.convergence_check(previous_point, current_point) is False):
+            if self.convergence_check(previous_point, current_point):
+                confidence += 1
+            previous_point = current_point
+            # Collections for cost function progression visualization
+            self.iterations.append(iteration_count)
+            self.function_values.append(self.rationale_engine.evaluate_loss(current_point))
+            # The core: Projection Gradient Descent
+            gradient = self.rationale_engine.evaluate_gradients(self.dimensionality)
+            current_point = self.projection(
+                (current_point[0] - (step_size * gradient[0]),
+                 current_point[1] - (step_size * gradient[1])))
+            iteration_count += 1
+        return current_point
+
+    # Visualize the progression of the cost function
+    def visualize(self):
+        # The data trace
+        cost_function_trace = plotly.graph_objs.Scatter(x=self.iterations,
+                                                        y=self.function_values,
+                                                        mode=PLOTLY_SCATTER_MODE)
+        # The layout
+        plot_layout = dict(title='Cost Progression Analysis during Projection Gradient Descent',
+                           xaxis=dict(title='Iterations'),
+                           yaxis=dict(title='Cost Function'))
+        # The figure instance
+        cost_function_progression_fig = dict(data=[cost_function_trace],
+                                             layout=plot_layout)
+        # The url for the figure
+        cost_function_progression_fig_url = plotly.plotly.plot(cost_function_progression_fig,
+                                                               filename='PGD_Cost_Progression_Analysis')
+        print('[INFO] ProjectionGradientDescent visualize: The cost progression visualization figure '
+              'is available at [{}]'.format(cost_function_progression_fig_url))
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -122,6 +202,9 @@ utility = Utility()
 
 # The global repository of tasks whose respective engines need to be analyzed for prediction rationale.
 task_repository = {}
+
+# Plotly Scatter mode
+PLOTLY_SCATTER_MODE = 'lines+markers'
 
 
 # The global view register routine
@@ -371,7 +454,7 @@ class PredictionRationaleEngine(object):
         # The width parameter of the exponential kernel function
         self.kernel_width = 1
         # Instance definition
-        # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{n}$ is the feature vector
+        # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{K}$ is the feature vector
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
         self.instance = namedtuple('instance', ['features', 'label'])
         # The number of features to be included in the interpretable model

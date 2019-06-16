@@ -1,0 +1,177 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[affil-it]{authblk}
+\usepackage[T1]{fontenc}
+\usepackage{subfigure}
+\usepackage{ulem}
+\usepackage{amsmath}
+\allowdisplaybreaks
+\usepackage{hhline}
+\usepackage{yfonts,color}
+\usepackage{soul,xcolor}
+\usepackage{verbatim}
+\usepackage{amsmath}
+\allowdisplaybreaks
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{float}
+\usepackage{bm}
+\usepackage{url}
+\usepackage{array}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{framed}
+\usepackage{balance}
+\usepackage{epsfig,epstopdf}
+\usepackage{booktabs}
+\usepackage{courier}
+\usepackage{subfigure}
+\usepackage{enumerate}
+\usepackage[options]{algorithm2e}
+\usepackage{algorithm}
+\usepackage[export]{adjustbox}
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+\newcommand{\rom}[1]{\uppercase\expandafter{\romannumeral #1\relax}}
+\usepackage{color}
+\usepackage{soul,xcolor}
+\newcommand{\nm}[1]{{\color{blue}\text{\bf{[NM: #1]}}}}
+\newcommand{\sst}[1]{\st{#1}}
+\newcommand{\gs}[1]{{\color{orange}\bf{[GS: #1]}}}
+\newcommand{\remove}[1]{{\color{magenta}{\bf REMOVE: [#1]}}}
+\newcommand{\add}[1]{{\color{red}{#1}}}
+\newcommand{\ull}[1]{\textbf{\color{red}\ul{#1}}}
+\normalem
+\usepackage{hyperref}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\title{%
+      Correlation and Causation Analysis in Black Box Deep Learning Models \\
+      \large A Mathematical Framework}
+\author{Bharath Keshavamurthy and Imran Pasha}
+\affil{CISCO Systems, Inc.}
+\date{June 2019}
+\begin{document}
+\maketitle
+\section{System Model}
+\begin{itemize}
+    \item $M \triangleq $ The number of training examples, $M \in \mathbb{Z}_{++}$
+    \item $f$ is a trained Deep Neural Network based classifier defined as $f: \mathcal{X} \rightarrow \mathcal{Y}$
+    \item $\mathcal{X}$ is the input feature space, $\mathcal{X} \in \mathbb{R}^{K}$
+    \item $\mathcal{Y}$ is the output label space, $\mathcal{Y} \in \{0,\ 1\}$
+    \item The Deep Neural Network based classifier is a black box to this prediction rationale determination operation and hence, we do not care about the hyper-parameters of the Neural Network.
+    \item Let $(\vec{x} \in \mathcal{X},\ y \in \mathcal{Y})$ be a prediction instance that needs to be explained by the proposed rationale determination engine. 
+    \item $\kappa \leq K\ \triangleq $ The number of interpretable features in the prediction rationale
+    \item Let $\vec{z} \in \mathcal{Z}$ be a perturbed instance sampled from the non-zero components (categorical or numerical ) of $\vec{x} \in (\vec{x} \in \mathcal{X},\ y \in \mathcal{Y})$ where $\mathcal{Z}$ represents the sparse, interpretable feature space.
+    \item $N \triangleq $ The number of perturbed instances sampled for prediction rationale determination, $N < M$
+    \item $Z \equiv \{\vec{z}_i \in \mathcal{Z} | i \in \{1, 2, \dots, N\}\}$ is the set of all perturbed instances sampled uniformly at random from the non-zero components of \\ $\vec{x} \in (\vec{x} \in \mathcal{X},\ y \in \mathcal{Y})$
+\end{itemize}
+\section{State-of-the-art}
+\begin{itemize}
+    \item A. Fisher, et. al., ``\href{https://arxiv.org/pdf/1801.01489.pdf}{\textcolor{blue}{All Models are Wrong but Many are Useful: Variable Importance for Black-Box, Proprietary, or Misspecified Prediction Models, using Model Class Reliance}}", November 2018
+    \item S. Lundberg and S. Lee, ``\href{https://arxiv.org/pdf/1705.07874.pdf}{\textcolor{blue}{A Unified Approach to Interpreting Model Predictions}}", November 2017
+    \item M. Rubeiro, et. al., ``\href{https://www.kdd.org/kdd2016/papers/files/rfp0573-ribeiroA.pdf}{\textcolor{blue}{ “Why Should I Trust You?” Explaining the Predictions of Any Classifier}}", February 2016
+\end{itemize}
+\section{Rationale Engine Design}
+The intuition is to fit a locally interpretable regression model in the neighbourhood of the sample prediction instance and use this model to explain the rationale behind that specific prediction. We can fit a Linear Model or build a Random Forests based Model from the sampled and perturbed set of interpretable feature vectors - in this paper, we stick to a linear model.
+\subsection{The Sparse Linear Locally Interpretable Model}
+Here are a few design points relevant to the linear model fit in the vicinity of the sample prediction instance.
+\begin{itemize}
+    \item Model: $f(\vec{z}) = \vec{\theta}^\intercal \vec{z} + \phi$
+    \item Exponential Kernel Weights:
+    \begin{equation}\label{1}
+        e_{\vec{x}}(\vec{z}) = e^{\frac{d(\vec{x}, \vec{z})^2}{\sigma^2}},
+    \end{equation}
+    where
+    \begin{equation}\label{2}
+        d(\vec{x}, \vec{z}) \triangleq \text{Cosine Similarity} = \Big(\frac{\vec{x} \cdot \vec{z}}{||\vec{x}||_2 ||\vec{z}||_2}\Big),
+    \end{equation}
+    \[\sigma^2 \triangleq \text{The width of the kernel}\]
+    \item Cost function:
+    \begin{equation}\label{3}
+        f_0(\vec{\theta}) = \frac{1}{N} \sum_{i=1}^N\ (y_i - \vec{\theta}^\intercal \vec{z} - \phi)^2
+    \end{equation}
+    \item The regularization condition modelled as an inequality constraint:
+    \begin{equation}\label{4}
+        \sum_{k=1}^{\kappa}\ |\theta_k| \leq \alpha,
+    \end{equation}
+    where, $\alpha > 0$ is a regularization parameter.
+\end{itemize}
+\subsection{Problem Formulation}
+\begin{equation}\label{5}
+    \begin{aligned}
+        \vec{\theta}^{*}, \phi^{*} = \argmin_{\vec{\theta}, \phi}\ \Big\{\frac{1}{N} \sum_{i=1}^N\ (y_i - \vec{\theta}^\intercal \vec{z} - \phi)^2\Big\},\\
+        \text{such that, } ||\vec{\theta}||_{1} \leq \alpha
+    \end{aligned}
+\end{equation}
+Accounting for the bias term within the target and the prediction, let's rewrite the objective function as,
+\begin{equation}\label{6}
+    \vec{\theta}^{*} = \argmin_{\vec{\theta}}\ \Big\{\frac{1}{N} \sum_{i=1}^N\ ((y_i - \Bar{y}) - (\vec{\theta}^\intercal \vec{z} - \vec{\theta}^\intercal \Bar{\textbf{z}})^2\Big\}.
+\end{equation}
+Assuming the targets and the predictions are normalized appropriately, we can write equation \eqref{6} as,
+\begin{equation*}
+    \vec{\theta}^{*} = \argmin_{\vec{\theta}}\ \Big\{\frac{1}{N} ||\vec{y} - A\vec{\theta}||_2^2\Big\}.
+\end{equation*}
+In other words,
+\begin{equation}\label{7}
+    \vec{\theta}^{*} = \argmin_{\vec{\theta}}\ \Big\{\frac{1}{N} \sum_{i=1}^N\ (y_i - \vec{\theta}^\intercal \vec{z})^2\Big\}.
+\end{equation}
+Finally, let's add the exponential kernel coefficient as a neighbourhood weight to equation \eqref{7} and re-write the optimization problem as,
+\begin{equation}\label{8}
+    \begin{aligned}
+        \vec{\theta}^{*} = \argmin_{\vec{\theta}}\ \Big\{\frac{1}{N} \sum_{i=1}^N\ e_{\vec{x}}(\vec{z}_i)\ (y_i - \vec{\theta}^\intercal \vec{z})^2\Big\},\\
+        \text{such that, } ||\vec{\theta}||_{1} \leq \alpha.
+    \end{aligned}
+\end{equation}
+\subsection{Problem Solution}
+The optimization problem detailed in equation \eqref{8} is a standard convex optimization problem due to the following reasons:
+\begin{itemize}
+    \item The inequality constraint encapsulates a feasible set defined as \[\mathcal{F} \equiv \{\vec{\theta} \in \mathbb{R}^{\kappa} | \textbf{1}^\intercal \vec{\theta} \leq \alpha\}.\] The feasible set $\mathcal{F}$ is a convex set because it is a half-space and all half-spaces are convex sets.
+    \item The objective function,
+    \[f_0(\vec{\theta}) = \frac{1}{N} \sum_{i=1}^N\ e_{\vec{x}}(\vec{z}_i)\ (y_i - \vec{\theta}^\intercal \vec{z})^2,\] is a convex function due to the following reasons:
+    \begin{itemize}
+        \item The domain of the function denoted by $dom(f_0) \equiv \mathbb{R}^{\kappa}$ is a convex set.
+        \item The objective function can be re-written as follows.
+        \\Pushing the weight in, we get,
+        \[f_0(\vec{\theta}) = \frac{1}{N} \sum_{i=1}^N\ ((e_{\vec{x}}(\vec{z}_i))^2 y_{i} - (e_{\vec{x}}(\vec{z}_i))^2 \vec{\theta}^\intercal \vec{z})^2\]
+        \[f_0(\vec{\theta}) = \frac{1}{N} ||\vec{y}' - A'\vec{\theta}||_2^{2}\]
+        where,
+        \[\vec{y}' = [(e_{\vec{x}}(\vec{z}_i))^2 y_i | i \in \{1, 2, \dots, N\}]^\intercal\]
+        \[A' = [(e_{\vec{x}}(\vec{z}_i))^2 z_{ij}],\ \forall i \in \{1, 2, \dots, N\}\ \text{and}\ j \in \{1, 2, \dots, \kappa\}\]
+        The L2-norm operation of a vector $(g(.) = ||.||_2)$ is convex because of the properties imbibed by the Triangle Inequality as explained below. Please note that this holds true for any $p-norm,\ p \in \mathbb{Z}_{++},\ p \geq 1$.
+        For $0 \leq \beta \leq 1$ and for any $\vec{x}, \vec{y} \in dom(g)$,
+        \[||\beta \vec{x} + \Bar{\beta} \vec{y}||_p \leq ||\beta \vec{x}||_p + ||\Bar{\beta} \vec{y}||_p\]
+        \[||\beta \vec{x} + \Bar{\beta} \vec{y}||_p \leq \beta||\vec{x}||_p + \Bar{\beta}||\vec{y}||_p\]
+        This satisfies the Jensen's inequality requirement for convexity of functions, i.e.,
+        \[g(\beta \vec{x} + \Bar{\beta} \vec{y}) \leq \beta g(\vec{x}) + \Bar{\beta} g(\vec{y})\]
+        Furthermore, the norm-square operation in the objective function is convex due to the composition of functions. More details are given below.
+        For any $\vec{x}, \vec{y} \in dom(g) \cap dom(h)$ where $g(.)$ denotes the norm function and $h(.)$ denotes the square function, we can write,
+        \[h(g(\beta \vec{x} + \Bar{\beta} \vec{y})) \leq h(\beta g(\vec{x}) + \Bar{\beta} g(\vec{y})) \leq \beta h(g(\vec{x})) + \Bar{\beta} h(g(\vec{y}))\]
+        Finally, the affine transformation of a convex function (norm-square of a vector) is a convex function.
+        \\Therefore, the cost function minimization performed within the locally interpretable regression model is a convex optimization problem.
+    \end{itemize}
+    \item Now that we have a constrained convex optimization problem on our hands, we can use Projection Gradient Descent to solve for the optimal parameters ($\vec{\theta}$) in the locally interpretable linear model.
+\end{itemize}
+\subsection{The Algorithm}
+\begin{algorithm}[H]
+\SetAlgoLined
+\textbf{Initialization}: Pick an initial point $\vec{\theta}_0 \in \mathcal{F}$\;
+\\Pick a step-size, $\gamma\ =\ 0.1$\newline
+\While{$\vec{\theta}_{t+1}\ !=\ [\vec{\theta}_t - \gamma \triangledown f_0(\vec{\theta}_t)]^+$}
+{
+    $\vec{\theta}_{t+1}\ =\ [\vec{\theta}_t - \gamma \triangledown f_0(\vec{\theta}_t)]^+$\;
+}
+\caption{Projection Gradient Descent Algorithm}
+\end{algorithm}
+Here, the $[\vec{\theta}]^+$ operation refers to the projection algorithm which is implemented in Python. In this document, we explain the \textbf{Vector Projection Logic} for a linear model in two dimensions.
+\\The component of a vector $\vec{a} \in \mathbb{R}^2$ along another vector $\vec{b} \in \mathbb{R}^2$ is given by,
+\[a_b\ =\ \frac{\vec{a} \cdot \vec{b}}{||\vec{b}||}\]
+The projection of $\vec{a}$ along $\vec{b}$ is then given by,
+\[\vec{a}_b\ =\ a_b \frac{\vec{b}}{||\vec{b}||}\]
+Taking the collection of line segments constituting the boundary of the feasible set, we find the \textit{<smallest\_distance, closest\_point>} pair for the out-of-bounds point with respect to each of these line segments and then find the smallest distance among them. The point corresponding to the smallest distance among all the line segments is the projection of the out-of-bounds point in the feasible set.
+\end{document}
