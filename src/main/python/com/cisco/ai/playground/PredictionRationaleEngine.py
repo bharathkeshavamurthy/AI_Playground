@@ -1,5 +1,7 @@
 # |Bleeding-Edge Productions|
-# This entity details a technique to provide an explanation for the prediction made by a NN-based classification model.
+# This entity details a technique to provide an explanation for the predictions made by black-box deep-learning models.
+# Wiki Online [Editable]: https://www.overleaf.com/project/5d0577c5b1a0eb46c7ea9983
+# Wiki Offline [PDF]: latex/pdf/Correlation_And_Causation_Analysis_v1_0_0.pdf
 # Author: Bharath Keshavamurthy
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
@@ -10,38 +12,47 @@ import numpy
 import plotly
 import pandas
 import random
+import itertools
 import traceback
 import tensorflow
 from tabulate import tabulate
 from collections import namedtuple
 
+# Plotly user account credentials for visualization
+plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPiEW5S')
 
+
+# The optimizer
 # The Projection Gradient Descent entity for Constrained Convex Optimization
+# This algorithmic implementation is suitable only for polyhedra. Something other than vector projection needs to be...
+# ...used for feasible sets which are not finite intersections of half-spaces.
+# TODO: Projection Gradient Descent Optimizer Implementations for problems with non-polyhedron feasible sets.
 class ProjectionGradientDescent(object):
 
     # The initialization sequence
-    def __init__(self, _dimensionality, _intercept_constraint, _rationale_engine):
+    def __init__(self, _dimensionality, _intercept_constraint, _line_segments, _rationale_engine):
+        print('[INFO] ProjectionGradientDescent Initialization: Bringing things up...')
         # The initialization status flag
         self.status = False
-        print('[INFO] ProjectionGradientDescent Initialization: Bringing things up...')
-        # Support for dimensionality is currently limited to two-dimensional feasible sets, i.e. \mathbb{R}^2
-        # TODO: Projection Gradient Descent for N-dimensional feasible sets / domains (N >= 2)
-        if _dimensionality != 2:
+        # Support for dimensionality is currently limited to ${SUPPORTED_DIMENSIONALITY}-dimensional feasible sets.
+        # You may have to use a Lagrangian based formulation with Stochastic Projection Gradient Descent in the Dual...
+        # ...for dimensionalities greater than ${SUPPORTED_DIMENSIONALITY).
+        # TODO: Projection Gradient Descent for N-dimensional feasible sets / domains (N >= ${SUPPORTED_DIMENSIONALITY})
+        if _dimensionality != SUPPORTED_DIMENSIONALITY:
             print('[ERROR] ProjectionGradientDescent Initialization: Support for problems with dimensionality other '
-                  'than 2 is not currently available. Please check back later!')
+                  'than [{}] is not currently available. Please check back later!'.format(SUPPORTED_DIMENSIONALITY))
             return
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
-        # The initial weights [\theta_0 \theta_1]
+        # The initial weights [\theta_0 \theta_1 ...]
         self.initial_weights = (0, 0)
-        # The intercept constraint in the given linear inequality constraint
+        # The intercept constraint in the given linear inequality constraint, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
         self.default_step_size = 0.001
+        # Two-dimensional Projection Gradient Descent
         # The line segments of the polyhedron which comprises the feasible set
-        self.line_segments = [[(0, 0), (self.intercept_constraint, 0)],
-                              [(0, 0), (0, self.intercept_constraint)],
-                              [(self.intercept_constraint, 0), (0, self.intercept_constraint)]]
+        self.line_segments = _line_segments
         # The iterations array which models the x-axis of the convergence plot
         self.iterations = []
         # The function values array which models the y-axis of the convergence plot
@@ -50,15 +61,17 @@ class ProjectionGradientDescent(object):
         self.confidence_bound = 10
         # The maximum number of iterations allowed during training
         self.max_iterations = 1e6
-        # The rationaleEngine for loss function evaluation
+        # The rationaleEngine for loss function and gradient evaluation
         self.rationale_engine = _rationale_engine
-        # The initialization has been completed...
+        # The initialization has been completed successfully
+        self.status = True
 
     # Vector Projection utility routine
     # Return the distance and the closest point w.r.t to that specific line segment
     def vector_projection(self, oob_point, line_segment):
         x1, y1 = line_segment[0]
         x2, y2 = line_segment[1]
+        # The out-of-bounds point which needs to be constrained based on the equality and/or inequality constraints
         x, y = oob_point
         # Is the point outside the feasible set?
         if (x < 0) or (y < 0) or ((x + y) > self.intercept_constraint):
@@ -96,14 +109,19 @@ class ProjectionGradientDescent(object):
                                                     ['distance', 'closest_point'])
         for line_segment in self.line_segments:
             # Perform vector projection of the operand vector (oob_point) with respect to the current line_segment
-            status_flag, distance, closest_point = self.vector_projection(oob_point, line_segment)
+            status_flag, distance, closest_point = self.vector_projection(oob_point,
+                                                                          line_segment)
             # No errors during the vector projection operation
-            if status_flag:
-                vector_projection_output_tuples_collection.append(
-                    vector_projection_output_tuple(distance=distance,
-                                                   closest_point=closest_point))
-        return min(vector_projection_output_tuples_collection,
-                   key=lambda x: x.distance).closest_point
+            if status_flag is False:
+                print('[ERROR] ProjectionGradientDescent projection: Something went wrong during vector projection. '
+                      'Please refer to the earlier logs for more information on what went wrong!')
+                return False, None
+            vector_projection_output_tuples_collection.append(
+                vector_projection_output_tuple(distance=distance,
+                                               closest_point=closest_point))
+        # Return the closest_point of all the projection outputs
+        return True, min(vector_projection_output_tuples_collection,
+                         key=lambda x: x.distance).closest_point
 
     # The convergence check for the Projection Gradient Descent algorithm
     def convergence_check(self, previous_point, current_point):
@@ -120,6 +138,8 @@ class ProjectionGradientDescent(object):
         step_size = (lambda: self.default_step_size,
                      lambda: _step_size)[_step_size is not None]()
         previous_point = None
+        # The convergence is theoretically guaranteed in finite time irrespective of the initialization
+        # For a detailed proof, please refer to "Convex Optimization" by Boyd and Vandenberghe.
         current_point = self.initial_weights
         confidence = 0
         iteration_count = 0
@@ -129,37 +149,50 @@ class ProjectionGradientDescent(object):
         while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound) and (
                 self.convergence_check(previous_point, current_point) is False):
             if self.convergence_check(previous_point, current_point):
+                # Increment confidence, if converged
                 confidence += 1
             previous_point = current_point
             # Collections for cost function progression visualization
             self.iterations.append(iteration_count)
             self.function_values.append(self.rationale_engine.evaluate_loss(current_point))
             # The core: Projection Gradient Descent
-            gradient = self.rationale_engine.evaluate_gradients(self.dimensionality)
-            current_point = self.projection(
-                (current_point[0] - (step_size * gradient[0]),
-                 current_point[1] - (step_size * gradient[1])))
+            gradient = self.rationale_engine.evaluate_gradients(current_point, self.dimensionality)
+            everything_is_okay, current_point = self.projection((current_point[0] - (step_size * gradient[0]),
+                                                                 current_point[1] - (step_size * gradient[1])))
+            # Propagating failure upward to the calling routine
+            # TODO: Maybe, send a callback into the mess below and check its status upon its return;...
+            # ...It's much cleaner that way!
+            if everything_is_okay is False:
+                return False, None, None
             iteration_count += 1
-        return current_point
+        # After convergence, visualize the progression of the cost function
+        self.visualize()
+        # Return the converged loss (function value) and the converged parameters of the regression model
+        return True, self.function_values[-1], current_point
 
     # Visualize the progression of the cost function
     def visualize(self):
-        # The data trace
-        cost_function_trace = plotly.graph_objs.Scatter(x=self.iterations,
-                                                        y=self.function_values,
-                                                        mode=PLOTLY_SCATTER_MODE)
-        # The layout
-        plot_layout = dict(title='Cost Progression Analysis during Projection Gradient Descent',
-                           xaxis=dict(title='Iterations'),
-                           yaxis=dict(title='Cost Function'))
-        # The figure instance
-        cost_function_progression_fig = dict(data=[cost_function_trace],
-                                             layout=plot_layout)
-        # The url for the figure
-        cost_function_progression_fig_url = plotly.plotly.plot(cost_function_progression_fig,
-                                                               filename='PGD_Cost_Progression_Analysis')
-        print('[INFO] ProjectionGradientDescent visualize: The cost progression visualization figure '
-              'is available at [{}]'.format(cost_function_progression_fig_url))
+        try:
+            # The data trace
+            cost_function_trace = plotly.graph_objs.Scatter(x=self.iterations,
+                                                            y=self.function_values,
+                                                            mode=PLOTLY_SCATTER_MODE)
+            # The layout
+            plot_layout = dict(title='Cost Progression Analysis during Projection Gradient Descent',
+                               xaxis=dict(title='Iterations'),
+                               yaxis=dict(title='Cost Function'))
+            # The figure instance
+            cost_function_progression_fig = dict(data=[cost_function_trace],
+                                                 layout=plot_layout)
+            # The url for the figure
+            cost_function_progression_fig_url = plotly.plotly.plot(cost_function_progression_fig,
+                                                                   filename='PGD_Cost_Progression_Analysis')
+            print('[INFO] ProjectionGradientDescent visualize: The cost progression visualization figure '
+                  'is available at [{}]'.format(cost_function_progression_fig_url))
+        except Exception as e:
+            print('[ERROR] ProjectionGradientDescent visualize: Exception caught in the plotly cost function '
+                  'progression visualization routine - {}'.format(e))
+            traceback.print_tb(e.__traceback__)
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -197,11 +230,19 @@ class Utility(object):
         print('[INFO] Utility Termination: Tearing things down...')
 
 
+# The global view members
+
 # The global utilities instance
 utility = Utility()
 
 # The global repository of tasks whose respective engines need to be analyzed for prediction rationale.
 task_repository = {}
+
+# The supported dimensionality
+# For varying dimensionalities, the software architecture would be to register dimensionality-specific optimizers...
+# ...and trigger them accordingly. Or, use Stochastic Projection Gradient Descent in the dual for a...
+# ...global, consolidated solution.
+SUPPORTED_DIMENSIONALITY = 2
 
 # Plotly Scatter mode
 PLOTLY_SCATTER_MODE = 'lines+markers'
@@ -223,9 +264,9 @@ def register(_id, _task):
 # The global view de-register routine
 def deregister(_id):
     try:
-        task_repository.pop(_id)
-        print('[INFO] GlobalView de-register: Successfully removed task with ID [{}] '
-              'from the task repository'.format(_id))
+        task = task_repository.pop(_id)
+        print('[INFO] GlobalView de-register: Successfully removed task [{}: {}] '
+              'from the task repository'.format(_id, task.__class__))
     except KeyError:
         print('[ERROR] GlobalView de-register: The task ID [{}] does not exist in the task repository! Nothing to be '
               'done!'.format(_id))
@@ -262,7 +303,7 @@ class ClassificationTask(object):
         deregister(_id)
 
 
-# This class employs fully-connected neural networks to perform the classification task.
+# This class employs a fully-connected neural network to perform the classification task.
 class NeuralNetworkClassificationEngine(ClassificationTask):
     # The task id
     TASK_ID = 'NN_CLASSIFIER_1'
@@ -444,69 +485,165 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
 
 
 # This class describes the procedure to provide intuitive, interpretable explanations for the predictions made by a...
-# a Neural Network based binary classification model using standard ML tools and techniques.
+# ...Black Box Deep Learning models for binary classification tasks.
 # This rationale engine is model agnostic.
 class PredictionRationaleEngine(object):
 
     # The initialization sequence
     def __init__(self):
         print('[INFO] PredictionRationaleEngine Initialization: Bringing things up...')
+        # The dimensionality of the locally interpretable model used in the rationale engine
+        self.dimensionality = SUPPORTED_DIMENSIONALITY
         # The width parameter of the exponential kernel function
         self.kernel_width = 1
         # Instance definition
         # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{K}$ is the feature vector
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
-        self.instance = namedtuple('instance', ['features', 'label'])
+        self.instance = namedtuple('instance', ['features', 'label', 'weight'])
+        # A named-tuple for individual models
+        self.model_results = namedtuple('model_results', ['features', 'loss', 'parameters'])
         # The number of features to be included in the interpretable model
-        self.interpretable_features_count = 2
+        self.interpretable_features_count = self.dimensionality
         # The number of perturbed instances sampled from the instance under analysis
         self.perturbed_samples_count = 1000
         # The regularization constraint
         self.regularization_constraint = 10
         # The classifiers under prediction-rationale analysis
-        self.classifiers_under_analysis = task_repository.items()
-        # Successfully built, compiled, and trained classifiers
+        self.classifiers_under_analysis = task_repository.values()
+        # A collection for successfully built, compiled, and trained classifiers
         self.competent_classifiers = []
-        # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
-        for classifier_id, classifier in self.classifiers_under_analysis:
-            classifier_status = classifier.build_model() and classifier.train_model() and classifier.evaluate_model()
-            if classifier_status:
-                self.competent_classifiers.append(classifier)
-            print('[INFO] PredictionRationaleEngine Initialization: '
-                  'Classifier tagging status - [{}]'.format(classifier_status))
+        # The prediction instance under rationale analysis - definition
+        self.instance_under_analysis = self.instance(features=None,
+                                                     label=None,
+                                                     weight=0.0,
+                                                     )
+        # The stripped down perturbed samples collection
+        self.baremetal_perturbed_samples_collection = []
+        # The polyhedra constituting the feasible set of the optimization problem
+        self.line_segments = [[(0, -self.regularization_constraint), (self.regularization_constraint, 0)],
+                              [(0, self.regularization_constraint), (self.regularization_constraint, 0)],
+                              [(0, self.regularization_constraint), (-self.regularization_constraint, 0)],
+                              [(0, -self.regularization_constraint), (-self.regularization_constraint, 0)]]
+        # The optimizer - ProjectionGradientDescentOptimizer
+        self.optimizer = ProjectionGradientDescent(self.dimensionality,
+                                                   self.regularization_constraint,
+                                                   self.line_segments,
+                                                   self)
+        # The optimizer is setup correctly
+        if self.optimizer.status:
+            # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
+            for classifier_id, classifier in self.classifiers_under_analysis:
+                classifier_status = classifier.build_model() and classifier.train_model() and \
+                                    classifier.evaluate_model()
+                # The classifier is setup correctly
+                if classifier_status:
+                    self.competent_classifiers.append(classifier)
+                    # Start the explanation sequence
+                    explanation = self.get_interpretable_explanation(classifier)
+                    if explanation is None:
+                        print('[ERROR] PredictionRationaleEngine Explanation: Something went wrong while developing '
+                              'interpretation. Please refer to the earlier logs for more information '
+                              'on what went wrong!')
+                    print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
+                          'for the classifier [{}] is described by [{}].'.format(classifier.__class__,
+                                                                                 explanation.features))
+                print('[INFO] PredictionRationaleEngine Initialization: '
+                      'Classifier tagging status - [{}]'.format(classifier_status))
+        else:
+            print('[ERROR] PredictionRationaleEngine Initialization: Failure during initialization. '
+                  'Please refer to the earlier logs for more information on what went wrong!')
 
     # Get weights using the exponential family of kernels based on a cosine similarity distance metric
     def get_weight(self, sample_instance, perturbed_instance):
-        return utility.exponential_kernel_coefficient(sample_instance, perturbed_instance, self.kernel_width)
+        return utility.exponential_kernel_coefficient(sample_instance.features,
+                                                      perturbed_instance.features,
+                                                      self.kernel_width)
 
     # Get a locally interpretable explanation for a prediction
     def get_interpretable_explanation(self, classifier):
         features_under_analysis = classifier.dataframe.columns[:-1]
-        # An array of perturbed samples
-        perturbed_samples = []
-        # Make a prediction using the built, compiled, and trained classifier
+        # Explain a prediction
+        # Make a prediction using the built, compiled, and trained classifier - population
         features, label = classifier.make_a_prediction()
+        self.instance_under_analysis.features = features
+        self.instance_under_analysis.label = label
+        # The dot product will be 1 -> cos 0 = 1 -> perfect cosine similarity -> Obviously!
+        self.instance_under_analysis.weight = self.get_weight(self.instance_under_analysis,
+                                                              self.instance_under_analysis)
         print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample prediction instance under '
-              'rationale analysis - Features = {} and Predicted Label = {}'.format(features, label))
-        # Creating <#perturbed_instances> perturbed samples for vicinity-based model fitting
-        for i in range(self.perturbed_samples_count):
-            # An empty instance
-            perturbed_sample = self.instance(features=pandas.DataFrame(columns=classifier.dataframe.columns),
-                                             label=None)
-            sampled_features = []
-            # Uniform sampling of <#interpretable_features>
-            for k in range(self.interpretable_features_count):
-                sampled_feature_family = random.sample(features_under_analysis)
-                # Already sampled this family. Move on...
-                if sampled_feature_family in sampled_features:
-                    continue
-                sampled_features.append(sampled_feature_family)
-                # Get the values array and the statistics for the sampled family
-                family_values, family_mean, family_std = classifier.data_processor_memory[sampled_feature_family]
-                # Standard Normalization technique
-                perturbed_sample.features[sampled_feature_family] = (random.sample(family_values) -
-                                                                     family_mean) / family_std
-            perturbed_samples.append(perturbed_sample)
+              'rationale analysis - Features = {} and Predicted Label = {}'.format(features,
+                                                                                   label))
+        # All possible combinations of the features under analysis, n=#global_features, r=#local_interpretable_features
+        all_possible_feature_family_combinations = [k for k in itertools.combinations(features_under_analysis,
+                                                                                      self.interpretable_features_count
+                                                                                      )]
+        # A collection to house the loss and parameters of each individual local fit
+        model_results_collection = []
+        for feature_family_tuple in all_possible_feature_family_combinations:
+            # Purge the collection after analysis
+            self.baremetal_perturbed_samples_collection.clear()
+            # Creating <#perturbed_instances> perturbed samples for vicinity-based model fitting
+            for i in range(self.perturbed_samples_count):
+                # The initial instance before perturbation analysis and locally interpretable model fitting
+                perturbed_sample = self.instance(features=features,
+                                                 label=None,
+                                                 weight=0.0)
+                # The perturbed sample stripped of unchanged components from the original sample
+                baremetal_perturbed_sample = self.instance(features=[],
+                                                           label=None,
+                                                           weight=0.0)
+                for feature_family in feature_family_tuple:
+                    # Get the values array and the statistics for the sampled family
+                    family_values, family_mean, family_std = classifier.data_processor_memory[feature_family]
+                    # Standard Normalization technique 1 - Sample from the vocabulary
+                    # Standard Normalization technique 2 - Subtract the family mean from the value
+                    # Standard Normalization technique 3 - Divide by the standard deviation of the family
+                    perturbed_value = (random.sample(family_values) - family_mean) / family_std
+                    perturbed_sample.features[feature_family] = perturbed_value
+                    baremetal_perturbed_sample.features.append(perturbed_value)
+                # The target
+                perturbed_sample.label = classifier.model(perturbed_sample.features)
+                # The weight
+                perturbed_sample.weight = self.get_weight(self.instance_under_analysis,
+                                                          perturbed_sample)
+                # Populate the baremetal sample with the label and the weight
+                baremetal_perturbed_sample.label = perturbed_sample.label
+                baremetal_perturbed_sample.weight = perturbed_sample.weight
+                self.baremetal_perturbed_samples_collection.append(baremetal_perturbed_sample)
+            model_output = self.optimizer.optimize(None)
+            if model_output[0] is False:
+                print('[ERROR] PredictionRationaleEngine get_interpretable_explanation: Something went wrong during '
+                      'optimization. Please refer to the earlier logs for more information on what went wrong!')
+                return None
+            model_results_collection.append(self.model_results(features=feature_family_tuple,
+                                                               loss=model_output[1],
+                                                               parameters=model_output[2]))
+        best_model = min(model_results_collection, key=lambda x: x.loss)
+        return best_model
+
+    # Evaluate the cost function / loss at the current point in $\mathbb{R}^{\kappa}$
+    def evaluate_loss(self, parameter_vector):
+        loss = 0.0
+        for baremetal_perturbed_sample in self.baremetal_perturbed_samples_collection:
+            loss = loss + (baremetal_perturbed_sample.weight * (
+                    (baremetal_perturbed_sample.label - sum(
+                        i * j for i, j in zip(parameter_vector, baremetal_perturbed_sample.features))) ** 2))
+        return loss / self.perturbed_samples_count
+
+    # Evaluate the gradient of the cost function / loss at the current point $\mathbb{R}^{\kappa}$
+    def evaluate_gradients(self, parameter_vector, dimensionality):
+        if dimensionality is not self.dimensionality:
+            raise NotImplementedError('[ERROR] PredictionRationaleEngine evaluate_gradients: '
+                                      'Gradient Evaluation for models with dimension not equal to [{}] is not '
+                                      'currently supported. Please check back later!'.format(self.dimensionality))
+        gradient = [k - k for k in range(len(parameter_vector))]
+        for baremetal_perturbed_sample in self.baremetal_perturbed_samples_collection:
+            inner_term = (sum(
+                i * j for i, j in zip(
+                    parameter_vector, baremetal_perturbed_sample.features)) - baremetal_perturbed_sample.label) * \
+                         baremetal_perturbed_sample.features
+            gradient = gradient + inner_term
+        return (2 / self.perturbed_samples_count) * gradient
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
