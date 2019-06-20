@@ -82,6 +82,10 @@ class RNNStockAnalysis(object):
     UPPER_LIMIT = 99.0
     PRECISION = 0.01
 
+    # Prediction randomness coefficient
+    # This is called temperature in language modelling
+    CHAOS_COEFFICIENT = 1e-6
+
     # The initialization sequence
     def __init__(self):
         print('[INFO] RNNStockAnalysis Initialization: Bringing things up...')
@@ -290,7 +294,7 @@ class RNNStockAnalysis(object):
             for i in range(self.LOOK_AHEAD_SIZE):
                 prediction = modified_model(trigger)
                 # Remove the useless dimension
-                prediction = tensorflow.squeeze(prediction, 0)
+                prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
                 # Append the predicted value to the output collection
@@ -300,7 +304,9 @@ class RNNStockAnalysis(object):
                 cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
                 # Move the context window to include the latest prediction and discount the oldest contextual element
                 cumulative_context = cumulative_context[1:]
-                trigger = tensorflow.expand_dims(cumulative_context, 0)
+                # Going back to single character trigger here
+                # TODO: Clean this block of code after evaluating what works and what doesn't!
+                trigger = tensorflow.expand_dims([predicted_price], 0)
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace

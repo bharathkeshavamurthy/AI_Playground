@@ -81,6 +81,10 @@ class AdvancedRNNStockAnalysis(object):
     UPPER_LIMIT = 99.0
     PRECISION = 0.01
 
+    # The randomness coefficient
+    # This is termed temperature in language prediction models
+    CHAOS_COEFFICIENT = 0.01
+
     # The initialization sequence
     def __init__(self):
         print('[INFO] AdvancedRNNStockAnalysis Initialization: Bringing things up...')
@@ -254,7 +258,7 @@ class AdvancedRNNStockAnalysis(object):
             return
         try:
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
-            modified_model.build(tensorflow.TensorShape([1, None]))
+            modified_model.build_model(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
             # ... of the test dataset
@@ -266,7 +270,7 @@ class AdvancedRNNStockAnalysis(object):
             for i in range(self.LOOK_AHEAD_SIZE):
                 prediction = modified_model(trigger)
                 # Remove the useless dimension
-                prediction = tensorflow.squeeze(prediction, 0)
+                prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
                 # Append the predicted value to the output collection
@@ -276,7 +280,7 @@ class AdvancedRNNStockAnalysis(object):
                 cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
                 # Move the context window to include the latest prediction and discount the oldest contextual element
                 cumulative_context = cumulative_context[1:]
-                trigger = tensorflow.expand_dims(cumulative_context, 0)
+                trigger = tensorflow.expand_dims([predicted_price], 0)
         except Exception as e:
             print('[ERROR] AdvancedRNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
