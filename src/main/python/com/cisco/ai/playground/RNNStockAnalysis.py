@@ -43,7 +43,7 @@ class RNNStockAnalysis(object):
 
     # (1 - DROPOUT_RATE)
     # The keep probability for Hinton Dropout
-    KEEP_PROBABILITY = 0.7
+    # KEEP_PROBABILITY = 0.7
 
     # The pragmatic limits of the stock price in USD
     PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
@@ -63,7 +63,7 @@ class RNNStockAnalysis(object):
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of training epochs
-    NUMBER_OF_TRAINING_EPOCHS = 3000
+    NUMBER_OF_TRAINING_EPOCHS = 1000
 
     # The checkpoint trigger factor
     CHECKPOINT_TRIGGER_FACTOR = 100
@@ -84,7 +84,7 @@ class RNNStockAnalysis(object):
 
     # Prediction randomness coefficient
     # This is called temperature in language modelling
-    CHAOS_COEFFICIENT = 1e-6
+    CHAOS_COEFFICIENT = 3.0
 
     # The initialization sequence
     def __init__(self):
@@ -231,7 +231,7 @@ class RNNStockAnalysis(object):
             # TODO: Add a logging hook as a callback and include it in the 'callbacks' collection within the fit routine
             # Checkpoint feature callback
             checkpoint_callback = tensorflow.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_prefix,
-                                                                             monitor='loss',
+                                                                             monitor=self.COST_METRIC,
                                                                              save_weights_only=True,
                                                                              save_best_only=True,
                                                                              verbose=1,
@@ -284,10 +284,10 @@ class RNNStockAnalysis(object):
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
-            # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
-            # ... of the test dataset
-            cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
-            trigger = tensorflow.expand_dims(cumulative_context, 0)
+            # The context is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters of the training dataset
+            trigger = tensorflow.expand_dims(
+                self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:],
+                0)
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
@@ -297,16 +297,10 @@ class RNNStockAnalysis(object):
                 prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
+                # Use the predicted price as the input into the next iteration
+                trigger = tensorflow.expand_dims([predicted_price], 0)
                 # Append the predicted value to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
-                # Context modification logic
-                # Add the predicted price to the context which would be used for the next iteration
-                cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
-                # Move the context window to include the latest prediction and discount the oldest contextual element
-                cumulative_context = cumulative_context[1:]
-                # Going back to single character trigger here
-                # TODO: Clean this block of code after evaluating what works and what doesn't!
-                trigger = tensorflow.expand_dims([predicted_price], 0)
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
