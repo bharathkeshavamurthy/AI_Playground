@@ -139,9 +139,6 @@ class Environment(object):
             ports.append(port)
         self.state = State(ports)
 
-    # After the agent performs an action on the environment, move to the next state
-    def update_state(self, _action, ):
-
     def __exit__(self, exc_type, exc_val, exc_tb):
         print('[INFO] Environment Termination: Tearing things down...')
 
