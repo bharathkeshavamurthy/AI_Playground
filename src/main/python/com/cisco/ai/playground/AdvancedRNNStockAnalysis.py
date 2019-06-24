@@ -83,7 +83,7 @@ class AdvancedRNNStockAnalysis(object):
 
     # The randomness coefficient
     # This is termed temperature in language prediction models
-    CHAOS_COEFFICIENT = 0.01
+    CHAOS_COEFFICIENT = 0.10
 
     # The initialization sequence
     def __init__(self):
@@ -130,6 +130,7 @@ class AdvancedRNNStockAnalysis(object):
                                          layout=initial_visualization_layout)
         initial_fig_url = plotly.plotly.plot(initial_visualization_fig,
                                              filename='CISCO_Variations_In_Stock_Price')
+        # Print the URL in case you're on an environment where a GUI is not available
         print('[INFO] AdvancedRNNStockAnalysis Initialization: Data Visualization Figure is available at {}'.format(
             initial_fig_url
         ))
@@ -138,8 +139,9 @@ class AdvancedRNNStockAnalysis(object):
         # Integer mapped training data
         self.training_data = numpy.array([self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training])
         # The data set for testing - [6500 6964)
-        self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:]
-        self.stock_prices_testing = self.stock_prices.values[self.TRAINING_DATA_LIMIT:]
+        self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
+        self.stock_prices_testing = self.stock_prices.values[
+                                    self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         # Create individual data samples and convert the data into sequences of lookback context length
         # Sequences of length 65 will be created
         self.batched_data = tensorflow.data.Dataset.from_tensor_slices(self.training_data).batch(
@@ -263,11 +265,11 @@ class AdvancedRNNStockAnalysis(object):
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
             # ... of the test dataset
             cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
-            trigger = tensorflow.expand_dims(cumulative_context, 0)
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
+                trigger = tensorflow.expand_dims(cumulative_context, 0)
                 prediction = modified_model(trigger)
                 # Remove the useless dimension
                 prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
@@ -280,7 +282,6 @@ class AdvancedRNNStockAnalysis(object):
                 cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
                 # Move the context window to include the latest prediction and discount the oldest contextual element
                 cumulative_context = cumulative_context[1:]
-                trigger = tensorflow.expand_dims([predicted_price], 0)
         except Exception as e:
             print('[ERROR] AdvancedRNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
@@ -312,6 +313,7 @@ def visualize_predictions(obj, _true_values, _predicted_values):
                                  layout=final_analysis_layout)
     final_analysis_url = plotly.plotly.plot(final_analysis_figure,
                                             filename='Prediction_Analysis_Test_Dataset')
+    # Print the URL in case you're on an environment where a GUI is not available
     print('[INFO] AdvancedRNNStockAnalysis visualize_predictions: The final prediction analysis visualization figure '
           'is available at {}'.format(final_analysis_url))
     return None

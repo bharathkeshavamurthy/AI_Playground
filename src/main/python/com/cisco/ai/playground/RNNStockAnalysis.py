@@ -53,7 +53,8 @@ class RNNStockAnalysis(object):
     LOOK_BACK_CONTEXT_LENGTH = 65
 
     # The length of the look-ahead predictions = The length of the test data set
-    LOOK_AHEAD_SIZE = 464
+    # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is two weeks
+    LOOK_AHEAD_SIZE = 10
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
@@ -84,7 +85,7 @@ class RNNStockAnalysis(object):
 
     # Prediction randomness coefficient
     # This is called temperature in language modelling
-    CHAOS_COEFFICIENT = 3.0
+    CHAOS_COEFFICIENT = 0.10
 
     # The initialization sequence
     def __init__(self):
@@ -133,6 +134,7 @@ class RNNStockAnalysis(object):
                                          layout=initial_visualization_layout)
         initial_fig_url = plotly.plotly.plot(initial_visualization_fig,
                                              filename='CISCO_Variations_In_Stock_Price')
+        # Print the URL in case you're on an environment where a GUI is not available
         print('[INFO] RNNStockAnalysis Initialization: Data Visualization Figure is available at {}'.format(
             initial_fig_url
         ))
@@ -140,9 +142,10 @@ class RNNStockAnalysis(object):
         self.stock_prices_training = self.stock_prices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
         self.training_data = numpy.array([self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training])
-        # The data set for testing - [6500 6964)
-        self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:]
-        self.stock_prices_testing = self.stock_prices.values[self.TRAINING_DATA_LIMIT:]
+        # The data set for testing - [6500 6510)
+        self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
+        self.stock_prices_testing = self.stock_prices.values[
+                                    self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         # Create individual data samples and convert the data into sequences of lookback context length
         # Sequences of length 65 will be created
         self.batched_data = tensorflow.data.Dataset.from_tensor_slices(self.training_data).batch(
@@ -231,7 +234,7 @@ class RNNStockAnalysis(object):
             # TODO: Add a logging hook as a callback and include it in the 'callbacks' collection within the fit routine
             # Checkpoint feature callback
             checkpoint_callback = tensorflow.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_prefix,
-                                                                             monitor=self.COST_METRIC,
+                                                                             monitor='loss',
                                                                              save_weights_only=True,
                                                                              save_best_only=True,
                                                                              verbose=1,
@@ -257,6 +260,7 @@ class RNNStockAnalysis(object):
                                    layout=training_layout)
             cost_progression_fig_url = plotly.plotly.plot(training_figure,
                                                           filename='Cost_Progression_Visualization_Training')
+            # Print the URL in case you're on an environment where a GUI is not available
             print('[INFO] RNNStockAnalysis train: Cost Progression Visualization Figure available at {}'.format(
                 cost_progression_fig_url
             ))
@@ -284,23 +288,26 @@ class RNNStockAnalysis(object):
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
-            # The context is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters of the training dataset
-            trigger = tensorflow.expand_dims(
-                self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:],
-                0)
+            # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
+            # ... of the test dataset
+            cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
+                trigger = tensorflow.expand_dims(cumulative_context, 0)
                 prediction = modified_model(trigger)
                 # Remove the useless dimension
                 prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
-                # Use the predicted price as the input into the next iteration
-                trigger = tensorflow.expand_dims([predicted_price], 0)
                 # Append the predicted value to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
+                # Context modification logic
+                # Add the predicted price to the context which would be used for the next iteration
+                cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
+                # Move the context window to include the latest prediction and discount the oldest contextual element
+                cumulative_context = cumulative_context[1:]
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
@@ -332,6 +339,17 @@ def visualize_predictions(obj, _true_values, _predicted_values):
                                  layout=final_analysis_layout)
     final_analysis_url = plotly.plotly.plot(final_analysis_figure,
                                             filename='Prediction_Analysis_Test_Dataset')
+    # An additional array creation logic is inserted in the print statement to format both collections identically...
+    # ...for aesthetics.
+    print('[INFO] RNNStockAnalysis visualize_predictions: Look-back Context Length - [{}]'.format(
+        obj.LOOK_BACK_CONTEXT_LENGTH))
+    print('[INFO] RNNStockAnalysis visualize_predictions: Look-ahead Size - [{}]'.format(
+        obj.LOOK_AHEAD_SIZE))
+    print('[INFO] RNNStockAnalysis visualize_predictions: The true stock prices are - \n{}'.format(
+        [k for k in _true_values]))
+    print('[INFO] RNNStockAnalysis visualize_predictions: The predicted prices are  - \n{}'.format(
+        [k for k in _predicted_values]))
+    # Print the URL in case you're on an environment where a GUI is not available
     print('[INFO] RNNStockAnalysis visualize_predictions: The final prediction analysis visualization figure is '
           'available at {}'.format(final_analysis_url))
     return None
