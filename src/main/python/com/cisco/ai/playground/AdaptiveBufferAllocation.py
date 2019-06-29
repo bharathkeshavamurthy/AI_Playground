@@ -1,9 +1,12 @@
+# |Bleeding-Edge Productions|
 # This entity describes an evaluation of Reinforcement Learning techniques for adaptive, intelligent buffer...
 # ...management in CISCO's Nexus Data Center switches.
 # Authors: Imran Pasha, Bharath Keshavamurthy
 # Email: <ipasha, bkeshava>@cisco.com
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
+
+# ----LEGACY APPROACH----
 
 # Salient Features:
 # State - Global Allocation Metrics

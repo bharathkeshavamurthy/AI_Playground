@@ -1,3 +1,4 @@
+# |Bleeding-Edge Productions|
 # This entity encapsulates an intelligent model to predict the stock prices of a company using RNNs in TensorFlow
 # This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ]
 # Use a historical context of 3 months to predict the stock prices 5 days (a week) into the future
