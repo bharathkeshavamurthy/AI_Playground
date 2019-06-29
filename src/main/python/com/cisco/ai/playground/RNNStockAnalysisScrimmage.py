@@ -197,7 +197,7 @@ class RNNStockAnalysisScrimmage(object):
             print('[ERROR] RNNStockAnalysisScrimmage predict: The operation failed due to previous errors!')
             return
         try:
-            modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
+            modified_model.load_weights('./checkpoints/checkpoint_100')
             modified_model.build(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
@@ -275,3 +275,4 @@ if __name__ == '__main__':
     visualize_predictions(rnnStockAnalysisScrimmage,
                           rnnStockAnalysisScrimmage.stock_prices_testing,
                           rnnStockAnalysisScrimmage.predict())
+

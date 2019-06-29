@@ -368,3 +368,4 @@ if __name__ == '__main__':
                               rnnStockAnalysis.predict())
     else:
         print('[INFO] RNNStockAnalysis Trigger: The operation failed due to previous errors!')
+
