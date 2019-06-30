@@ -1,0 +1,227 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[affil-it]{authblk}
+\usepackage[T1]{fontenc}
+\usepackage{subfigure}
+\usepackage{ulem}
+\usepackage{amsmath}
+\allowdisplaybreaks
+\usepackage{hhline}
+\usepackage{yfonts,color}
+\usepackage{soul,xcolor}
+\usepackage{verbatim}
+\usepackage{amsmath}
+\allowdisplaybreaks
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{float}
+\usepackage{bm}
+\usepackage{url}
+\usepackage{array}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{framed}
+\usepackage{balance}
+\usepackage{epsfig,epstopdf}
+\usepackage{booktabs}
+\usepackage{courier}
+\usepackage{subfigure}
+\usepackage{enumerate}
+\usepackage[export]{adjustbox}
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+\newcommand{\rom}[1]{\uppercase\expandafter{\romannumeral #1\relax}}
+\usepackage{color}
+\usepackage{soul,xcolor}
+\newcommand{\nm}[1]{{\color{blue}\text{\bf{[NM: #1]}}}}
+\newcommand{\sst}[1]{\st{#1}}
+\newcommand{\gs}[1]{{\color{orange}\bf{[GS: #1]}}}
+\newcommand{\remove}[1]{{\color{magenta}{\bf REMOVE: [#1]}}}
+\newcommand{\add}[1]{{\color{red}{#1}}}
+\newcommand{\ull}[1]{\textbf{\color{red}\ul{#1}}}
+\normalem
+\usepackage{hyperref}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\title{%
+      An Intelligent, Hierarchical Framework for Adaptive Buffer Allocation in the CISCO Nexus Data Center Switches\\
+      \large A Deep Deterministic Policy Gradient (DDPG) Approach in a traditional Asynchronous Advantage Actor-Critic (A3C) DDQN-PER Architecture}
+\author{Bharath Keshavamurthy and Imran Pasha}
+\affil{CISCO Systems, Inc.}
+\date{June 2019}
+\begin{document}
+\maketitle
+\section{System Model}
+\subsection{Definitions}
+\begin{itemize}
+    \item $N_P \triangleq $ The number of ports in the switch
+    \item $N_Q \triangleq $ The number of queues per port in the switch
+    \item Each port has a dedicated buffer space with capacity, 
+    \[C_{local}^{P_i},\ \forall i \in \{0, 1, 2, \dots, N_P-1).\]
+    When this dedicated buffer space is exhausted, i.e. allocated at any given time, the "\textbf{Intelligent Buffer Allocation Engine}" within the switch allocates the required amount of buffer space from the switch's global pool denoted by $C_{global}$.
+    \item The size of the port-specific local pool and the global pool are design specific, i.e. varies from one switch variant to another. The engine proposed in this paper is agnostic to these design specifications as long as the switch complies with the basic framework outlined above.
+    \item The arrival process of packets at each queue is modelled as a \textbf{Poisson Process} with rate $\lambda_{P_i Q_j} > 0,\ \forall i \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j \in \{0, 1, 2, \dots, N_Q-1\}$ denoted by,
+    \[\{N_t,\ t \geq 0\}.\]
+    \item There are two kinds of queues in every port - a High-Priority Queue with high service rate and a Low Priority Queue with low service rate. The service process at each queue is modelled as an \textbf{Exponential Process} with rates $\mu_{P_i Q_j}^{high} > 0$ and $\mu_{P_n Q_m}^{low} > 0$ where $\mu_{P_i Q_j}^{high} >> \mu_{P_n Q_m}^{low}$ for any $i, n \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j, m \in \{0, 1, 2, \dots, N_Q-1\}$ such that $P_i Q_j \neq P_n Q_m$.
+\end{itemize}
+\subsection{The Framework}
+\begin{itemize}
+    \item The queueing systems within the switch are modelled as \textbf{M/M/1 systems} with test scenarios covering varying degrees of load/utilization, i.e.,
+    \begin{equation}
+        \rho \triangleq \frac{\lambda_{P_i Q_j}}{\mu_{P_i Q_j}^{high|low}}\ \forall i \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j \in \{0, 1, 2, \dots, N_Q-1\}.
+    \end{equation}
+    \item The adaptive, hierarchical, and intelligent buffer allocation procedure is modelled as a \textbf{Markov Decision Process (MDP)} defined as a 6-tuple, \\$(\mathcal{S}, \mathcal{A}, \mathcal{Y}, \alpha, \beta, \Pi)$ where, $\mathcal{S}$ denotes the state space, $\mathcal{A}$ denotes the action space, and $\mathcal{Y}$ denotes the observation space. Furthermore, the transition model $\alpha$, emission model $\beta$, and the initial steady-state model $\Pi$ of the MDP are unknown. This lack of process information encourages us to explore the use of Model-Free Learning Techniques to achieve optimal buffer allocation heuristics.
+    \item The state space, the action space, the observation space, and the reward/cost metrics are detailed in the subsequent subsections.
+\end{itemize}
+\subsection{The State Space}
+The state space of the underlying MDP is modelled as,
+\begin{equation}
+    \begin{aligned}
+        \mathcal{S} \equiv \{\vec{S}\ |\ \vec{S} = [\textbf{X}\ \delta_{global}]^T\ |\ \textbf{X}\ \text{is a}\ (N_P) \text{x} (N_Q+1)\ \text{matrix with}\ \\\vec{x}_{ij} \in \textbf{X} \equiv [\{P_i Q_j\}_{min} \{P_i Q_j\}_{max} \{P_i Q_j\}_{alloc} \{P_i Q_j\}_{drop}],\ \\
+        \forall i \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j \in \{0, 1, 2, \dots, N_Q-1\}\}.
+    \end{aligned}
+\end{equation}
+From the above definition of the state space, it is evident that the state space is huge, the exact number of total possible states depends on the design of the switch, i.e. the required minimum buffer space in the queue $\{P_i Q_j\}_{min}$, the maximum allowed buffer space in the queue $\{P_i Q_j\}_{max}$, and the size of the dedicated pool and the shared pool per port.
+\\For a switch with three port and two queues per port, a state in the state space can be represented as $\vec{S} = [X\ \delta_{global}]^T \in \mathcal{S}$ where, $X$ can be written as
+$$
+\begin{bmatrix} 
+[\{P_0 Q_0\}_{min} \{P_0 Q_0\}_{max} \{P_0 Q_0\}_{alloc} \{P_0 Q_0\}_{drop}] & [\{P_0 Q_1\}_{min} \{P_0 Q_1\}_{max} \{P_0 Q_1\}_{alloc} \{P_0 Q_1\}_{drop}] & \delta_{local}^{P_0}\\
+[\{P_1 Q_0\}_{min} \{P_1 Q_0\}_{max} \{P_1 Q_0\}_{alloc} \{P_1 Q_0\}_{drop}] & [\{P_1 Q_1\}_{min} \{P_1 Q_1\}_{max} \{P_1 Q_1\}_{alloc} \{P_0 Q_1\}_{drop}] & \delta_{local}^{P_1}\\
+[\{P_2 Q_0\}_{min} \{P_2 Q_0\}_{max} \{P_2 Q_0\}_{alloc} \{P_2 Q_0\}_{drop}] & [\{P_2 Q_1\}_{min} \{P_2 Q_1\}_{max} \{P_2 Q_1\}_{alloc} \{P_2 Q_1\}_{drop}] & \delta_{local}^{P_2}
+\end{bmatrix}
+.
+$$
+where, $\delta_{local}^{P_i}$ denotes the leftover buffer space in the dedicated pool of port $P_i, \forall i \in \{0, 1, 2, \dots, N_P-1\}$ and $\delta_{global}$ denotes the leftover buffer space in the global pool (switch-level). 
+\\The presence of this complex trickle-down allocation requirement along with varying degrees of priority among queues make this problem a very difficult one: warrants the need for an adaptive, hierarchical, intelligent allocation algorithm design. More on this later.
+\subsection{The Action Space}
+The action space of the underlying MDP is modelled as,
+\begin{equation}
+    \begin{aligned}
+        \mathcal{A} \equiv \{A\ |\ A = \{\vec{a} \ |\ \vec{a} \equiv [a_{ij}]\}\}.
+    \end{aligned}
+\end{equation}
+where, $\vec{a}$ is a row vector and $a_{ij} \in \vec{a}$ corresponds to the \textit{increment}, \textit{decrement}, or \textit{no-change} operation s.t. $0 \leq a_{ij} \leq \{P_i Q_j\}_{max}$ and $a_{ij} \in \mathbb{Z}_{++} \cup \{0\}$, for any $i \in \{0, 1, 2, \dots, N_P-1\}$ and $\forall j \in \{0, 1, 2, \dots, N_Q-1\}$ corresponding to that particular $i$.
+\subsection{The Observation Space}
+\begin{itemize}
+    \item Within the context of the design of a switch, it does not make sense to consider partially observable (incomplete observations and/or noisy observations), hence, we will not approach this problem as a \textbf{Partially Observable Markov Decision Process (POMDP)} one.
+    \item In this problem, we assume the \textbf{system states are completely observable in a noiseless environment}.
+    \item The observation space is modelled as,
+    \begin{equation}
+        \mathcal{Y} \equiv \{\vec{Y}\ |\ \vec{Y} = \vec{S},\ \vec{S} \in \mathcal{S}\}.
+    \end{equation}
+\end{itemize}
+\subsection{The Reward Metrics}
+\begin{itemize}
+    \item We propose to employ \textbf{continuous reward metrics} within our evaluation of the allocation process.
+    \item The reward obtained by the MDP agent in an episode of interaction with the switch environment is modelled as $r_t \in \mathbb{Z}$ where,
+    \begin{equation}
+        r_{t} \triangleq \Big(- \Big\{\sum_{i=0}^{N_P-1}\ \sum_{j=0}^{N_Q-1}\ (\{P_i Q_j\}_{drop})_t\Big\}\Big).
+    \end{equation}
+\end{itemize}
+\section{Motivation}
+\begin{itemize}
+    \item As we go through the state space, the action space, the observation space, and the reward/cost metrics, we realize that we're dealing with enormous state and action spaces whose size increases exponentially with an increase in the number of ports, queues, and buffer spaces corresponding to them.
+    \item Owing to this curse of dimensionality, standard MDP techniques such as Value Iteration and Policy Iteration are rendered infeasible. For enormous state spaces, considering the fact that the transition, emission, and initial steady-state models of the underlying MDP are unknown, a model-free learning technique known as \textbf{Q-Learning} can be employed.
+    \item However, computing the Q-values for every state-action pair in this enormous state space would be impossible considering the prowess of today's computational systems on-board the switch and the fact that we need almost real-time allocation recommendations in deployment. \textbf{Deep-Q-Networks} (use an Artificial Neural Network (ANN) to evaluate the Q-value for a given state-action pair and pick the largest one) offer a feasible solution in this scenario, however, the presence of an enormous action space causes the number of neurons in the output layer of the ANN to explode which increases the number of training parameters which in turn increases training time.
+    \item In order to solve the problem of increased training times, we employ an \textbf{Advantage Asynchronous Actor-Critic (A3C)} architecture employing \textbf{Double Deep-Q-Networks (DDQNs)} with a \textbf{Deep Deterministic Policy Gradient (DDPG)} Optimization used within the Actor network.
+\end{itemize}
+\section{State-of-the-Art}
+\begin{enumerate}
+    \item J. Schulman, et. al., ``\href{https://arxiv.org/pdf/1506.02438.pdf}{\textcolor{blue}{High-Dimensional Continuous Control using Generalized Advantage Estimation}}", October 2018\label{1}
+    \item V. Mnih, et. al.,
+    ``\href{https://arxiv.org/pdf/1602.01783.pdf}{\textcolor{blue}{Asynchronous Methods for Deep Reinforcement Learning}}, June 2016\label{2}
+    \item T. Schaul, et. al., ``\href{https://arxiv.org/pdf/1511.05952.pdf}{\textcolor{blue}{Prioritized Experiential Replay}}", February 2016\label{3}
+    \item T. Lillicrap, et. al., ``\href{https://arxiv.org/pdf/1509.02971.pdf}{\textcolor{blue}{Continuous Control with Deep Reinforcement Learning}}", February 2016\label{4}
+    \item H. Hasselt, et. al.,
+    ``\href{https://arxiv.org/pdf/1509.06461.pdf}{\textcolor{blue}{Deep Reinforcement Learning with Double Q-learning}}", December 2015\label{5}
+    \item R. Sutton and A. Barto,
+    ``\href{https://web.stanford.edu/class/psych209/Readings/SuttonBartoIPRLBook2ndEd.pdf}{\textcolor{blue}{Introduction to Reinforcement Learning}}", 2015\label{6}
+    \item S. Ioffe and C. Szegedy,
+    ``\href{https://arxiv.org/pdf/1502.03167.pdf}{\textcolor{blue}{Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift}}", March 2015\label{7}
+    \item V. Mnih, et. al.,
+    ``\href{https://arxiv.org/pdf/1312.5602.pdf}{\textcolor{blue}{Playing Atari with Deep Reinforcement Learning}}, December 2013\label{8}
+    \item D. Bertsekas, ``\href{http://web.mit.edu/dimitrib/www/dpchapter.html}{\textcolor{blue}{Dynamic Programming and Optimal Control - Volumes 1 and 2}}", 2012\label{9}
+    \item L. Ornstein and G. Uhlenbeck,
+    ``\href{https://journals.aps.org/pr/abstract/10.1103/PhysRev.36.823}{\textcolor{blue}{On the Theory of the Brownian Motion}}", September 1930\label{10}
+\end{enumerate}
+\section{Solution Approach}
+An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Networks with Prioritized Experiential Replay architecture employing Deep Deterministic Policy Gradient in the Actor Network
+\subsection{Asynchronous Advantage Actor Critic (A3C)}
+\begin{itemize}
+    \item The design employs an \textbf{Off-Policy Learning Algorithm}.
+    \item \textbf{The Actor Network}'s output is modelled as $\mu(\vec{S}\ |\ \theta^{\xi}),\ \forall \vec{S} \in \mathcal{S}$ and the actor is responsible for determining the action policy to be followed by the RL agent.
+    \item \textbf{The Critic Network}'s output is modelled as $Q(\vec{S}\ |\ A, \theta^{Q}),\ \forall \vec{S} \in \mathcal{S}, \forall A \in \mathcal{A}$ and the critic is responsible for determining the "goodness" of the actor's action policy. The TD error from the critic drives the actor towards the most optimal action policy.
+    \item In an Asynchronous Actor-Critic setting, \textbf{multiple DQN workers} having their own set of network weights interact with their own copy of the switch environment. This not only speeds up the training of the overall Actor-Critic architecture, but also makes the training more diverse because each worker logs in a myriad of experiences with the switch environment.
+    \item The design incorporates a \textbf{Prioritized Experience Replay Buffer} to remove correlations among training data while training the neural networks and thereby facilitate faster convergence. Instead of sampling random experiences from the replay memory, the design samples experiences according to two different sampling variants - \textit{TD-Error Prioritization} and \textit{Stochastic Prioritization} [\ref{3}]. We then compare the effort needed arrive at optimal solutions for the buffer allocation algorithm for these two experience sampling variants.
+    \item The TD target for the Critic in episode $t$ considering $\vec{S}_t, \vec{A}_t$, is given by,
+    \begin{equation}
+        \psi_{t} \triangleq r_t + \gamma Q(\vec{S}_{t+1}, \xi(\vec{S}_{t+1})\ |\ \theta^{Q}).
+    \end{equation}
+    \item The loss function of the Critic is determined by sampling experiences in a batch $M \equiv \{(\vec{S}_{k}, \vec{A}_{k}, r_{k}(\vec{S}_{k}, \vec{A}_{k}), \vec{S}'_{k}, \Gamma)\ |\ k \in \{0, 1, 2, \dots, |M| - 1\}\}$ and determining the mean-square error between the target and the prediction (\textbf{off-policy}) as shown below.
+    \begin{equation}
+        L(\theta^{Q}) \triangleq \frac{1}{N} \sum_{k=0}^{|M|-1}\ (\psi_k - Q(\vec{S}_{k}, \vec{A}_{k}\ |\ \theta^{Q}))^2
+    \end{equation}
+    Note that $\Gamma$ refers to a flag indicating whether the allocation process has reached a terminal state or not - a design consideration. Also, note that the model is completely agnostic to the transitions (including the transitions to the terminal state).
+    \item The loss function of the Critic can be optimized using optimizers from TensorFlow (\textbf{AdamOptimizer} or \textbf{GradientDescentOptimizer}). The optimization update step considering a simple GradientDescentOptimizer is,
+    \begin{equation}
+        \theta^{Q}_{n+1} = \theta^{Q}_{n} + \omega \triangledown L(\theta^{Q}_{n}).
+    \end{equation}
+    where, $\omega$ represents the step-size which can be a fixed or a varying step-size, i.e. $\frac{1}{n}$.
+    \item The Actor Network is optimized using a \textbf{Deterministic Policy Gradient} technique wherein the update rule is obtained as shown below.
+    \\The Bellman equation [\ref{4}] helps us determine the value of a state-action pair termed \textbf{Action Value Function} corresponding to a given policy $\pi: \mathcal{S} \rightarrow \mathcal{A}$ as defined by,
+    \begin{equation}\label{9a}
+        V^{\pi}(\vec{S}_t, \pi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma \mathbb{E}_{A_{t+1} = \pi(\vec{S}_{t+1})}\ \Big[ V^{\pi}(\vec{S}_{t+1}, A_{t+1})\Big]\Big].
+    \end{equation}
+    In Q-Learning which is an off-policy learning procedure, the target policy is a greedy one, i.e. $\pi(\vec{S}_{t+1}) = \argmax_{A \in \mathcal{A}}\ Q(\vec{S}_{t+1}, A)$, we can write equation \eqref{9a} as,
+    \begin{equation}\label{9b}
+        Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma Q^{\xi}(\vec{S}_{t+1}, \xi(\vec{S}_{t+1})\Big].
+    \end{equation}
+    Taking the gradient in equation \eqref{9b} with respect to the Actor Network parameters $\theta^{\xi}$ and changing the expectation into an expectation over a separate behavior policy $\Xi$, we get,
+    \begin{equation}\label{9c}
+        \triangledown_{\theta^{\xi}} \xi = \mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}}\Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_{t})\ |\ \theta^{Q})\Big)\Big].
+    \end{equation}
+    where, $\theta^{Q}$ is incorporated because the design includes a Critic Network that determines the Q-value of state-action pairs estimating the ``goodness" of the pair.
+    \\Furthermore, equation \eqref{9c} can be written as,
+    \begin{equation}\label{9d}
+        \triangledown_{\theta^{\xi}}\ \xi = \mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}} \Big(\xi(\vec{S}_t)\Big) \cdot \triangledown_{\xi(\vec{S}_t)} \Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)\ |\ \theta^{Q})\Big)\Big].
+    \end{equation}
+    \item The DDPG A3C architecture is constructed in a standard \textbf{Double Deep-Q-Networks (DDQNs)} framework- one ANN is employed to estimate the Q-values for the state-action pairs while another ANN is employed to select the best action, given the state. The separation of the selection and estimation steps is done within the design in order to mitigate the over-estimation of Q-values which is found to occur in conventional DQNs [\ref{5}].
+    \item \textbf{Batch Normalization} layers are incorporated into the design of both the Actor and Critic Networks in order to ensure that each dimension across the samples in a batch have unit mean and variance which in turn mitigates the covariance shift during training and ensures that the subsequent layers receive whitened input data.
+    \item As mentioned earlier, the design incorporates a separate network to determine the target value. The target network is updated using a soft update step as given by,
+    \begin{equation}
+        \theta' \longleftarrow \tau \theta + (1 - \tau) \theta'.
+    \end{equation}
+    where, $\tau << 1$ is the \textbf{target tracking coefficient}. This soft target update greatly stabilizes the learning process and mitigates divergence of the critic network's weights during training [\ref{4}].
+    \item To allow for exploration within the design, we incorporate two exploration strategies:
+    \begin{itemize}
+        \item A decaying exploration coefficient employed in an $\epsilon$-greedy action selection process
+        \item System-Generated Ornstein-Uhlenbeck Noise $\mathcal{U}$ is added to the actor policy $\xi$ to create the exploration policy $\xi'$ as shown below.
+        \begin{equation}
+            \xi'(\vec{S}_t) = \xi(\vec{S}_t\ |\ \theta^{\xi}) + \mathcal{U}.
+        \end{equation}
+    \end{itemize}
+    Given these two exploration strategies, performance evaluations are conducted to understand the best exploration policy in the given switch environment.
+    \item \textbf{Generation of Ornstein-Uhlenbeck Noise}:
+    \\Vasicek Model of the Ornstein-Uhlenbeck Process-
+    \begin{equation}
+        du_{t} = \phi(\nu - u_{t}) dt + \sigma dW_{t}
+    \end{equation}
+    where, $\phi > 0,\ \sigma > 0$, and $W_u$ represents a Brownian Motion process.
+    \begin{equation}\label{16}
+        u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma dW_{t}
+    \end{equation}
+    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has independent increments- $W_{p+q} - W_{p},\ p > 0\ and\ q \geq 0$ is independent of $W_{m},\ m < t$ and Gaussian increments- $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$.
+    \begin{equation}\label{17}
+        dW_{t} \sim \mathcal{N}(0, dt) = \sqrt{dt} \mathcal{N}(0, 1)
+    \end{equation}
+    Using equation \eqref{17} in equation \eqref{16},
+    \begin{equation}
+        u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma(\sqrt{dt} \mathcal{N}(0, 1))
+    \end{equation}
+\end{itemize}
+\end{document}
