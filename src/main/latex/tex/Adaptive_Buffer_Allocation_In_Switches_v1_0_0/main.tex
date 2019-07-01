@@ -76,6 +76,9 @@
         \rho \triangleq \frac{\lambda_{P_i Q_j}}{\mu_{P_i Q_j}^{high|low}}\ \forall i \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j \in \{0, 1, 2, \dots, N_Q-1\}.
     \end{equation}
     \item The adaptive, hierarchical, and intelligent buffer allocation procedure is modelled as a \textbf{Markov Decision Process (MDP)} defined as a 6-tuple, \\$(\mathcal{S}, \mathcal{A}, \mathcal{Y}, \alpha, \beta, \Pi)$ where, $\mathcal{S}$ denotes the state space, $\mathcal{A}$ denotes the action space, and $\mathcal{Y}$ denotes the observation space. Furthermore, the transition model $\alpha$, emission model $\beta$, and the initial steady-state model $\Pi$ of the MDP are unknown. This lack of process information encourages us to explore the use of Model-Free Learning Techniques to achieve optimal buffer allocation heuristics.
+    \item We could also employ a Parameter Estimation algorithm based on the principles of \textbf{Maximum Likelihood Estimation (MLE)}, i.e.,
+    \[\hat{\rho}^{*} = \argmax_{\rho}\ \mathbb{P}(\vec{Y}\ |\ \rho).\]
+    One such technique is the well-known \textbf{Expectation-Maximization Algorithm} which can be employed to estimate the parameters of the underlying Markov model in the allocation process. But, as discussed in the subsequent sections of the document, the enormous state, action, and observation spaces make it impossible to apply standard MLE algorithms to estimate the model parameters. Therefore, Model-Free Learning techniques leveraging Artificial Neural Networks (ANNs) as \textbf{function-approximators} to estimate the action-value functions is the most optimal approach.
     \item The state space, the action space, the observation space, and the reward/cost metrics are detailed in the subsequent subsections.
 \end{itemize}
 \subsection{The State Space}
@@ -86,15 +89,14 @@ The state space of the underlying MDP is modelled as,
         \forall i \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j \in \{0, 1, 2, \dots, N_Q-1\}\}.
     \end{aligned}
 \end{equation}
-From the above definition of the state space, it is evident that the state space is huge, the exact number of total possible states depends on the design of the switch, i.e. the required minimum buffer space in the queue $\{P_i Q_j\}_{min}$, the maximum allowed buffer space in the queue $\{P_i Q_j\}_{max}$, and the size of the dedicated pool and the shared pool per port.
-\\For a switch with three port and two queues per port, a state in the state space can be represented as $\vec{S} = [X\ \delta_{global}]^T \in \mathcal{S}$ where, $X$ can be written as
+From the above definition of the state space, it is evident that the state space is huge: the exact number of total possible states depends on the design of the switch, i.e. the required minimum buffer space in the queue $\{P_i Q_j\}_{min}$, the maximum allowed buffer space in the queue $\{P_i Q_j\}_{max}$, and the size of the dedicated pool $C_{local}^{P_i}$ and the shared pool per port $C_{global}$.
+\\For a switch with three ports and two queues per port, i.e. $N_P = 3$ and $N_Q = 2$, a state in the state space can be represented as $\vec{S} = [X\ \delta_{global}]^T \in \mathcal{S}$ where, $X$ can be written as
 $$
 \begin{bmatrix} 
 [\{P_0 Q_0\}_{min} \{P_0 Q_0\}_{max} \{P_0 Q_0\}_{alloc} \{P_0 Q_0\}_{drop}] & [\{P_0 Q_1\}_{min} \{P_0 Q_1\}_{max} \{P_0 Q_1\}_{alloc} \{P_0 Q_1\}_{drop}] & \delta_{local}^{P_0}\\
 [\{P_1 Q_0\}_{min} \{P_1 Q_0\}_{max} \{P_1 Q_0\}_{alloc} \{P_1 Q_0\}_{drop}] & [\{P_1 Q_1\}_{min} \{P_1 Q_1\}_{max} \{P_1 Q_1\}_{alloc} \{P_0 Q_1\}_{drop}] & \delta_{local}^{P_1}\\
 [\{P_2 Q_0\}_{min} \{P_2 Q_0\}_{max} \{P_2 Q_0\}_{alloc} \{P_2 Q_0\}_{drop}] & [\{P_2 Q_1\}_{min} \{P_2 Q_1\}_{max} \{P_2 Q_1\}_{alloc} \{P_2 Q_1\}_{drop}] & \delta_{local}^{P_2}
 \end{bmatrix}
-.
 $$
 where, $\delta_{local}^{P_i}$ denotes the leftover buffer space in the dedicated pool of port $P_i, \forall i \in \{0, 1, 2, \dots, N_P-1\}$ and $\delta_{global}$ denotes the leftover buffer space in the global pool (switch-level). 
 \\The presence of this complex trickle-down allocation requirement along with varying degrees of priority among queues make this problem a very difficult one: warrants the need for an adaptive, hierarchical, intelligent allocation algorithm design. More on this later.
@@ -122,13 +124,14 @@ where, $\vec{a}$ is a row vector and $a_{ij} \in \vec{a}$ corresponds to the \te
     \begin{equation}
         r_{t} \triangleq \Big(- \Big\{\sum_{i=0}^{N_P-1}\ \sum_{j=0}^{N_Q-1}\ (\{P_i Q_j\}_{drop})_t\Big\}\Big).
     \end{equation}
+    \item The use of continuous rewards as opposed to discrete metrics will inadvertently result in slower convergence. However, the design offsets this by employing multiple workers which not only speeds up the training, but also makes it more diverse.
 \end{itemize}
 \section{Motivation}
 \begin{itemize}
     \item As we go through the state space, the action space, the observation space, and the reward/cost metrics, we realize that we're dealing with enormous state and action spaces whose size increases exponentially with an increase in the number of ports, queues, and buffer spaces corresponding to them.
-    \item Owing to this curse of dimensionality, standard MDP techniques such as Value Iteration and Policy Iteration are rendered infeasible. For enormous state spaces, considering the fact that the transition, emission, and initial steady-state models of the underlying MDP are unknown, a model-free learning technique known as \textbf{Q-Learning} can be employed.
-    \item However, computing the Q-values for every state-action pair in this enormous state space would be impossible considering the prowess of today's computational systems on-board the switch and the fact that we need almost real-time allocation recommendations in deployment. \textbf{Deep-Q-Networks} (use an Artificial Neural Network (ANN) to evaluate the Q-value for a given state-action pair and pick the largest one) offer a feasible solution in this scenario, however, the presence of an enormous action space causes the number of neurons in the output layer of the ANN to explode which increases the number of training parameters which in turn increases training time.
-    \item In order to solve the problem of increased training times, we employ an \textbf{Advantage Asynchronous Actor-Critic (A3C)} architecture employing \textbf{Double Deep-Q-Networks (DDQNs)} with a \textbf{Deep Deterministic Policy Gradient (DDPG)} Optimization used within the Actor network.
+    \item Owing to this \textbf{curse of dimensionality}, standard MDP techniques such as Value Iteration and Policy Iteration are rendered infeasible. For enormous state spaces, considering the fact that the transition, emission, and initial steady-state models of the underlying MDP are unknown, a model-free learning technique known as \textbf{Q-Learning} can be employed.
+    \item However, computing the Q-values for every state-action pair in this enormous state and action space environment would be impossible considering the prowess of today's computational systems on-board the switch and the fact that we need almost real-time allocation recommendations in deployment. \textbf{Deep-Q-Networks} (use an Artificial Neural Network (ANN) to evaluate the Q-value for a given state-action pair and pick the action with the largest Q-value for the given input state) offer a feasible solution in this scenario, however, the presence of an enormous action space causes the number of neurons in the output layer of the ANN to explode, which increases the number of training parameters, which in turn increases the training time.
+    \item In order to solve the problem of increased training times, we employ an \textbf{Asynchronous Advantage Actor-Critic (A3C)} architecture employing \textbf{Double Deep-Q-Networks (DDQNs)} with a \textbf{Deep Deterministic Policy Gradient (DDPG)} Optimization used within the Actor network.
 \end{itemize}
 \section{State-of-the-Art}
 \begin{enumerate}
@@ -150,19 +153,19 @@ where, $\vec{a}$ is a row vector and $a_{ij} \in \vec{a}$ corresponds to the \te
     ``\href{https://journals.aps.org/pr/abstract/10.1103/PhysRev.36.823}{\textcolor{blue}{On the Theory of the Brownian Motion}}", September 1930\label{10}
 \end{enumerate}
 \section{Solution Approach}
-An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Networks with Prioritized Experiential Replay architecture employing Deep Deterministic Policy Gradient in the Actor Network
+\textit{An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Networks with Prioritized Experiential Replay architecture employing Deep Deterministic Policy Gradient in the Actor Network}
 \subsection{Asynchronous Advantage Actor Critic (A3C)}
 \begin{itemize}
     \item The design employs an \textbf{Off-Policy Learning Algorithm}.
     \item \textbf{The Actor Network}'s output is modelled as $\mu(\vec{S}\ |\ \theta^{\xi}),\ \forall \vec{S} \in \mathcal{S}$ and the actor is responsible for determining the action policy to be followed by the RL agent.
     \item \textbf{The Critic Network}'s output is modelled as $Q(\vec{S}\ |\ A, \theta^{Q}),\ \forall \vec{S} \in \mathcal{S}, \forall A \in \mathcal{A}$ and the critic is responsible for determining the "goodness" of the actor's action policy. The TD error from the critic drives the actor towards the most optimal action policy.
     \item In an Asynchronous Actor-Critic setting, \textbf{multiple DQN workers} having their own set of network weights interact with their own copy of the switch environment. This not only speeds up the training of the overall Actor-Critic architecture, but also makes the training more diverse because each worker logs in a myriad of experiences with the switch environment.
-    \item The design incorporates a \textbf{Prioritized Experience Replay Buffer} to remove correlations among training data while training the neural networks and thereby facilitate faster convergence. Instead of sampling random experiences from the replay memory, the design samples experiences according to two different sampling variants - \textit{TD-Error Prioritization} and \textit{Stochastic Prioritization} [\ref{3}]. We then compare the effort needed arrive at optimal solutions for the buffer allocation algorithm for these two experience sampling variants.
-    \item The TD target for the Critic in episode $t$ considering $\vec{S}_t, \vec{A}_t$, is given by,
+    \item The design incorporates a \textbf{Prioritized Experience Replay Buffer} to remove correlations among training data samples while training the neural networks and thereby facilitating faster convergence. Instead of sampling random experiences from the replay memory, the design samples experiences according to two different sampling variants - \textit{TD-Error Prioritization} and \textit{Stochastic Prioritization} [\ref{3}]. We then compare the effort needed arrive at optimal solutions for the buffer allocation algorithm for these two experience sampling variants.
+    \item The TD target for the Critic in episode $t$ considering $\vec{S}_t \in \mathcal{S}\ \text{and}\ A_t \in \mathcal{A}$ is given by,
     \begin{equation}
         \psi_{t} \triangleq r_t + \gamma Q(\vec{S}_{t+1}, \xi(\vec{S}_{t+1})\ |\ \theta^{Q}).
     \end{equation}
-    \item The loss function of the Critic is determined by sampling experiences in a batch $M \equiv \{(\vec{S}_{k}, \vec{A}_{k}, r_{k}(\vec{S}_{k}, \vec{A}_{k}), \vec{S}'_{k}, \Gamma)\ |\ k \in \{0, 1, 2, \dots, |M| - 1\}\}$ and determining the mean-square error between the target and the prediction (\textbf{off-policy}) as shown below.
+    \item The loss function of the Critic is determined by sampling experiences in a batch $M \equiv \{(\vec{S}_{k}, A_{k}, r_{k}(\vec{S}_{k}, \vec{A}_{k}), \vec{S}'_{k}, \Gamma)\ |\ k \in \{0, 1, 2, \dots, |M| - 1\}\}$ and determining the mean-square error between the target and the prediction (\textbf{off-policy}) as shown below.
     \begin{equation}
         L(\theta^{Q}) \triangleq \frac{1}{N} \sum_{k=0}^{|M|-1}\ (\psi_k - Q(\vec{S}_{k}, \vec{A}_{k}\ |\ \theta^{Q}))^2
     \end{equation}
@@ -171,13 +174,13 @@ An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Netw
     \begin{equation}
         \theta^{Q}_{n+1} = \theta^{Q}_{n} + \omega \triangledown L(\theta^{Q}_{n}).
     \end{equation}
-    where, $\omega$ represents the step-size which can be a fixed or a varying step-size, i.e. $\frac{1}{n}$.
+    where, $\omega$ represents the step-size which can be a fixed or a varying step-size, i.e. $\frac{1}{n}$. Note that $\omega$ is also known in AI literature as \textbf{the learning rate}.
     \item The Actor Network is optimized using a \textbf{Deterministic Policy Gradient} technique wherein the update rule is obtained as shown below.
-    \\The Bellman equation [\ref{4}] helps us determine the value of a state-action pair termed \textbf{Action Value Function} corresponding to a given policy $\pi: \mathcal{S} \rightarrow \mathcal{A}$ as defined by,
+    \\The Bellman equation [\ref{4}] helps us determine the value of a state-action pair termed \textbf{Action-Value Function} corresponding to a given policy $\pi: \mathcal{S} \rightarrow \mathcal{A}$ as defined by,
     \begin{equation}\label{9a}
         V^{\pi}(\vec{S}_t, \pi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma \mathbb{E}_{A_{t+1} = \pi(\vec{S}_{t+1})}\ \Big[ V^{\pi}(\vec{S}_{t+1}, A_{t+1})\Big]\Big].
     \end{equation}
-    In Q-Learning which is an off-policy learning procedure, the target policy is a greedy one, i.e. $\pi(\vec{S}_{t+1}) = \argmax_{A \in \mathcal{A}}\ Q(\vec{S}_{t+1}, A)$, we can write equation \eqref{9a} as,
+    In Q-Learning which is an off-policy learning procedure, the target policy is a greedy one, i.e. $\xi(\vec{S}_{t+1}) = \argmax_{A \in \mathcal{A}}\ Q(\vec{S}_{t+1}, A)$, we can write equation \eqref{9a} as,
     \begin{equation}\label{9b}
         Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma Q^{\xi}(\vec{S}_{t+1}, \xi(\vec{S}_{t+1})\Big].
     \end{equation}
@@ -190,8 +193,15 @@ An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Netw
     \begin{equation}\label{9d}
         \triangledown_{\theta^{\xi}}\ \xi = \mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}} \Big(\xi(\vec{S}_t)\Big) \cdot \triangledown_{\xi(\vec{S}_t)} \Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)\ |\ \theta^{Q})\Big)\Big].
     \end{equation}
+    The optimization update step at the Actor is given by,
+    \begin{equation}
+        \theta^{\xi}_{n+1} = \theta^{\xi}_{n} + \omega\Big(\triangledown_{\theta^{\xi}}\ \xi\Big).
+    \end{equation}
+    \begin{equation}
+        \theta^{\xi}_{n+1} = \theta^{\xi}_{n} + \omega \Big\{\mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}} \Big(\xi(\vec{S}_t)\Big) \cdot \triangledown_{\xi(\vec{S}_t)} \Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)\ |\ \theta^{Q})\Big)\Big]\Big\}
+    \end{equation}
     \item The DDPG A3C architecture is constructed in a standard \textbf{Double Deep-Q-Networks (DDQNs)} framework- one ANN is employed to estimate the Q-values for the state-action pairs while another ANN is employed to select the best action, given the state. The separation of the selection and estimation steps is done within the design in order to mitigate the over-estimation of Q-values which is found to occur in conventional DQNs [\ref{5}].
-    \item \textbf{Batch Normalization} layers are incorporated into the design of both the Actor and Critic Networks in order to ensure that each dimension across the samples in a batch have unit mean and variance which in turn mitigates the covariance shift during training and ensures that the subsequent layers receive whitened input data.
+    \item \textbf{Batch Normalization} layers are incorporated into the design of both the Actor and Critic Networks in order to ensure that each dimension across the samples in a batch have unit mean and variance which in turn mitigates the covariance shift during training and ensures that the subsequent layers receive whitened input data [\ref{4}].
     \item As mentioned earlier, the design incorporates a separate network to determine the target value. The target network is updated using a soft update step as given by,
     \begin{equation}
         \theta' \longleftarrow \tau \theta + (1 - \tau) \theta'.
@@ -199,8 +209,8 @@ An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Netw
     where, $\tau << 1$ is the \textbf{target tracking coefficient}. This soft target update greatly stabilizes the learning process and mitigates divergence of the critic network's weights during training [\ref{4}].
     \item To allow for exploration within the design, we incorporate two exploration strategies:
     \begin{itemize}
-        \item A decaying exploration coefficient employed in an $\epsilon$-greedy action selection process
-        \item System-Generated Ornstein-Uhlenbeck Noise $\mathcal{U}$ is added to the actor policy $\xi$ to create the exploration policy $\xi'$ as shown below.
+        \item A \textit{Decaying Exploration Coefficient} employed in an $\epsilon$-greedy action selection process
+        \item \textit{System-Generated Ornstein-Uhlenbeck Noise} $\mathcal{U}$ is added to the actor policy $\xi$ to create the exploration policy $\xi'$ as shown below.
         \begin{equation}
             \xi'(\vec{S}_t) = \xi(\vec{S}_t\ |\ \theta^{\xi}) + \mathcal{U}.
         \end{equation}
@@ -212,14 +222,15 @@ An Asynchronous Advantage Actor-Critic Approach on a standard Double Deep-Q-Netw
         du_{t} = \phi(\nu - u_{t}) dt + \sigma dW_{t}
     \end{equation}
     where, $\phi > 0,\ \sigma > 0$, and $W_u$ represents a Brownian Motion process.
-    \begin{equation}\label{16}
+    \begin{equation}\label{18}
         u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma dW_{t}
     \end{equation}
-    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has independent increments- $W_{p+q} - W_{p},\ p > 0\ and\ q \geq 0$ is independent of $W_{m},\ m < t$ and Gaussian increments- $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$.
-    \begin{equation}\label{17}
+    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has \textbf{independent increments}- $W_{p+q} - W_{p},\ p > 0\ and\ q \geq 0$ is independent of $W_{m},\ m < t$ and \textbf{Gaussian increments}- $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$.
+    \\Mathematically,
+    \begin{equation}\label{19}
         dW_{t} \sim \mathcal{N}(0, dt) = \sqrt{dt} \mathcal{N}(0, 1)
     \end{equation}
-    Using equation \eqref{17} in equation \eqref{16},
+    Using equation \eqref{19} in equation \eqref{18},
     \begin{equation}
         u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma(\sqrt{dt} \mathcal{N}(0, 1))
     \end{equation}
