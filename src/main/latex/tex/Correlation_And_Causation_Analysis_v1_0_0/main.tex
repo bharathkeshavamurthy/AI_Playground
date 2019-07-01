@@ -75,21 +75,21 @@
 \begin{itemize}
     \item A. Fisher, et. al., ``\href{https://arxiv.org/pdf/1801.01489.pdf}{\textcolor{blue}{All Models are Wrong but Many are Useful: Variable Importance for Black-Box, Proprietary, or Misspecified Prediction Models, using Model Class Reliance}}", November 2018
     \item S. Lundberg and S. Lee, ``\href{https://arxiv.org/pdf/1705.07874.pdf}{\textcolor{blue}{A Unified Approach to Interpreting Model Predictions}}", November 2017
-    \item M. Rubeiro, et. al., ``\href{https://www.kdd.org/kdd2016/papers/files/rfp0573-ribeiroA.pdf}{\textcolor{blue}{ “Why Should I Trust You?” Explaining the Predictions of Any Classifier}}", February 2016
+    \item M. Ribeiro, et. al., ``\href{https://www.kdd.org/kdd2016/papers/files/rfp0573-ribeiroA.pdf}{\textcolor{blue}{ “Why Should I Trust You?” Explaining the Predictions of Any Classifier}}", 2016
 \end{itemize}
 \section{Rationale Engine Design}
 The intuition is to fit a locally interpretable regression model in the neighbourhood of the sample prediction instance and use this model to explain the rationale behind that specific prediction. We can fit a Linear Model or build a Random Forests based Model from the sampled and perturbed set of interpretable feature vectors - in this paper, we stick to a linear model.
 \subsection{The Sparse Linear Locally Interpretable Model}
 Here are a few design points relevant to the linear model fit in the vicinity of the sample prediction instance.
 \begin{itemize}
-    \item Model: $f(\vec{z}) = \vec{\theta}^\intercal \vec{z} + \phi$
+    \item Model: $g(\vec{z}) = \vec{\theta}^\intercal \vec{z} + \phi$
     \item Exponential Kernel Weights:
     \begin{equation}\label{1}
-        e_{\vec{x}}(\vec{z}) = e^{\frac{d(\vec{x}, \vec{z})^2}{\sigma^2}},
+        e_{\vec{x}}(\vec{z}) = e^{\frac{D'(\vec{x}, \vec{z})^2}{\sigma^2}},
     \end{equation}
     where
     \begin{equation}\label{2}
-        d(\vec{x}, \vec{z}) \triangleq \text{Cosine Similarity} = \Big(\frac{\vec{x} \cdot \vec{z}}{||\vec{x}||_2 ||\vec{z}||_2}\Big),
+        D'(\vec{x}, \vec{z}) \triangleq \text{Cosine Similarity} = \Big(\frac{\vec{x} \cdot \vec{z}}{||\vec{x}||_2 ||\vec{z}||_2}\Big),
     \end{equation}
     \[\sigma^2 \triangleq \text{The width of the kernel}\]
     \item Cost function:
@@ -111,7 +111,7 @@ Here are a few design points relevant to the linear model fit in the vicinity of
 \end{equation}
 Accounting for the bias term within the target and the prediction, let's rewrite the objective function as,
 \begin{equation}\label{6}
-    \vec{\theta}^{*} = \argmin_{\vec{\theta}}\ \Big\{\frac{1}{N} \sum_{i=1}^N\ ((y_i - \Bar{y}) - (\vec{\theta}^\intercal \vec{z} - \vec{\theta}^\intercal \Bar{\textbf{z}})^2\Big\}.
+    \vec{\theta}^{*} = \argmin_{\vec{\theta}}\ \Big\{\frac{1}{N} \sum_{i=1}^N\ ((y_i - \Bar{y}) - (\vec{\theta}^\intercal \vec{z} - \vec{\theta}^\intercal \Bar{\textbf{z}}))^2\Big\}.
 \end{equation}
 Assuming the targets and the predictions are normalized appropriately, we can write equation \eqref{6} as,
 \begin{equation*}
@@ -143,25 +143,26 @@ The optimization problem detailed in equation \eqref{8} is a standard convex opt
         where,
         \[\vec{y}' = [(e_{\vec{x}}(\vec{z}_i))^2 y_i | i \in \{1, 2, \dots, N\}]^\intercal\]
         \[A' = [(e_{\vec{x}}(\vec{z}_i))^2 z_{ij}],\ \forall i \in \{1, 2, \dots, N\}\ \text{and}\ j \in \{1, 2, \dots, \kappa\}\]
-        The L2-norm operation of a vector $(g(.) = ||.||_2)$ is convex because of the properties imbibed by the Triangle Inequality as explained below. Please note that this holds true for any $p-norm,\ p \in \mathbb{Z}_{++},\ p \geq 1$.
+        The L2-norm operation of a vector $(h(.) = ||.||_2)$ is convex because of the properties imbibed by the Triangle Inequality as explained below. Please note that this holds true for any $p-norm,\ p \in \mathbb{Z}_{++},\ p \geq 1$.
         For $0 \leq \beta \leq 1$ and for any $\vec{x}, \vec{y} \in dom(g)$,
         \[||\beta \vec{x} + \Bar{\beta} \vec{y}||_p \leq ||\beta \vec{x}||_p + ||\Bar{\beta} \vec{y}||_p\]
         \[||\beta \vec{x} + \Bar{\beta} \vec{y}||_p \leq \beta||\vec{x}||_p + \Bar{\beta}||\vec{y}||_p\]
         This satisfies the Jensen's inequality requirement for convexity of functions, i.e.,
-        \[g(\beta \vec{x} + \Bar{\beta} \vec{y}) \leq \beta g(\vec{x}) + \Bar{\beta} g(\vec{y})\]
+        \[h(\beta \vec{x} + \Bar{\beta} \vec{y}) \leq \beta h(\vec{x}) + \Bar{\beta} h(\vec{y})\]
         Furthermore, the norm-square operation in the objective function is convex due to the composition of functions. More details are given below.
-        For any $\vec{x}, \vec{y} \in dom(g) \cap dom(h)$ where $g(.)$ denotes the norm function and $h(.)$ denotes the square function, we can write,
-        \[h(g(\beta \vec{x} + \Bar{\beta} \vec{y})) \leq h(\beta g(\vec{x}) + \Bar{\beta} g(\vec{y})) \leq \beta h(g(\vec{x})) + \Bar{\beta} h(g(\vec{y}))\]
+        For any $\vec{x}, \vec{y} \in dom(h) \cap dom(l)$ where $h(.)$ denotes the norm function and $l(.)$ denotes the square function, we can write,
+        \[l(h(\beta \vec{x} + \Bar{\beta} \vec{y})) \leq l(\beta h(\vec{x}) + \Bar{\beta} h(\vec{y})) \leq \beta l(h(\vec{x})) + \Bar{\beta} l(h(\vec{y}))\]
         Finally, the affine transformation of a convex function (norm-square of a vector) is a convex function.
         \\Therefore, the cost function minimization performed within the locally interpretable regression model is a convex optimization problem.
     \end{itemize}
     \item Now that we have a constrained convex optimization problem on our hands, we can use Projection Gradient Descent to solve for the optimal parameters ($\vec{\theta}$) in the locally interpretable linear model.
 \end{itemize}
 \subsection{The Algorithm}
+The optimization algorithm is detailed below. Note that \textbf{Algorithm 1} is just an optimization algorithm used to determine the weights of the numerous constructed locally interpretable models. The fully integrated causation analysis algorithm is detailed in \textbf{Algorithm 2}.
 \begin{algorithm}[H]
 \SetAlgoLined
-\textbf{Initialization}: Pick an initial point $\vec{\theta}_0 \in \mathcal{F}$\;
-\\Pick a step-size, $\gamma\ =\ 0.1$\newline
+\textbf{Initialization}: Pick an initial point $\vec{\theta}_0 \in \mathcal{F}$;
+\\Pick a step-size, $\gamma\ =\ 0.1$;\\
 \While{$\vec{\theta}_{t+1}\ !=\ [\vec{\theta}_t - \gamma \triangledown f_0(\vec{\theta}_t)]^+$}
 {
     $\vec{\theta}_{t+1}\ =\ [\vec{\theta}_t - \gamma \triangledown f_0(\vec{\theta}_t)]^+$\;
@@ -174,4 +175,49 @@ Here, the $[\vec{\theta}]^+$ operation refers to the projection algorithm which 
 The projection of $\vec{a}$ along $\vec{b}$ is then given by,
 \[\vec{a}_b\ =\ a_b \frac{\vec{b}}{||\vec{b}||}\]
 Taking the collection of line segments constituting the boundary of the feasible set, we find the \textit{<smallest\_distance, closest\_point>} pair for the out-of-bounds point with respect to each of these line segments and then find the smallest distance among them. The point corresponding to the smallest distance among all the line segments is the projection of the out-of-bounds point in the feasible set.
+\\The final, integrated causation determination algorithm is outlined below.
+\begin{algorithm}[H]
+\SetAlgoLined
+Build, Compile, and Train a Neural Networks based Classifier $f: \mathcal{X} \rightarrow \mathcal{Y}$;\\
+Predict a sample case from the test data and call it a \textit{prediction rationale instance} $p(\vec{x}^{(p)}, y^{(p)})$;\\
+Now, the task at hand is to explain/interpret the prediction made by the NN-Classification engine;\\
+Based on the hyper-parameters $N$=the number of perturbed samples and $\kappa$=the number of features in the interpretable model, create perturbed samples $\vec{z}_i,\ \forall i \in \{1, 2, \dots, N\}$ by sampling $\kappa$ random features of the prediction rationale instance $p$'s feature vector $\vec{x}^{(p)}$:\\
+samplesCollection = $[]$;\\
+$j = 0$;\\
+for all possible $\kappa$-feature combinations, i.e. \While{$j < \binom{K}{\kappa}$}
+{
+    $i = 0$;\\
+    samples = $[]$;\\
+    \While{$i < N$}
+    {
+        Perturbed sample $\vec{z}_i$ = randomly sample $(x_1, x_2, \dots, x_{\kappa})_j$ components of the prediction rationale instance's feature vector $\vec{x}^{(p)}$;\\
+        Construct the bare-metal perturbed sample (stripped-down version for optimization) $\vec{z}'_i$;\\
+        Find the cosine similarity of the perturbed sample - \\
+        $D'(\vec{x}^{(p)}, \vec{z}_i) = \frac{\vec{x}^{(p)} \cdot \vec{z}_i}{||\vec{x}^{(p)}||_2 ||\vec{z}_i||_2}$;\\
+        Evaluate the weight (exponential kernel) of this perturbed sample - \\
+        $e_{\vec{x}^{(p)}}(\vec{z}_i) = \exp({\frac{D'(\vec{x}^{(p)}, \vec{z}_i)^2}{\sigma^2}})$;\\
+        Determine the prediction made by the classifier for this perturbed sample - $y_{\vec{z}_i} = f(\vec{z}_i)$;\\
+        $\text{samples}[i] = (\vec{z}_i, \vec{z}'_i, e_{\vec{x}^{(p)}}(\vec{z}_i), y_{\vec{z}_i})$;
+    }
+    $\text{samplesCollection}[j] = \text{samples}$;\\
+}
+evaluationResults = $[]$;\\
+$j = 0$;\\
+for samples in samplesCollection, i.e. \While{$j < \binom{K}{\kappa}$}
+{
+    Perform Projection Gradient Descent to determine the minimum of the loss function and the corresponding optimal weights:\\
+    {
+        \textbf{Initialization}: Pick an initial point $\vec{\theta}_0 \in \mathcal{F}$;
+        \\Pick a step-size, $\gamma\ =\ 0.1$;\\
+        $f_0^{j}(\vec{\theta}) = \frac{1}{N} \sum_{i=1}^N\ \Big(e_{\vec{x}}(\vec{z}_i)\ (y_i - \vec{\theta}^\intercal \vec{z})^2\Big)$;\\
+        \While{$\vec{\theta}^{j}_{t+1}\ !=\ [\vec{\theta}^{j}_t - \gamma \triangledown f_0^{j}(\vec{\theta}^{j}_t)]^+$}
+        {
+            $\vec{\theta}^{j}_{t+1}\ =\ [\vec{\theta}^{j}_t - \gamma \triangledown f_0(\vec{\theta}^{j}_t)]^+$\;
+        }
+        \textbf{Optimized Result}: evaluationResults$[j]$ = $(\vec{\theta}^{j*}, f_0(\vec{\theta}^{j*}))$;
+    }
+}
+\textbf{Output}: Causation for the prediction rationale instance - \\ $Causation(p(\vec{x}^{(p)}, y^{(p)}))$ = $\min(\text{evaluationResults},\ \textbf{lambda}\ x:\ x[1])[0]$;
+\caption{Integrated Causation Determination Algorithm}
+\end{algorithm}
 \end{document}

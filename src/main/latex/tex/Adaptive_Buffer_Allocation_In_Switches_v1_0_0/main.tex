@@ -85,12 +85,12 @@
 The state space of the underlying MDP is modelled as,
 \begin{equation}
     \begin{aligned}
-        \mathcal{S} \equiv \{\vec{S}\ |\ \vec{S} = [\textbf{X}\ \delta_{global}]^T\ |\ \textbf{X}\ \text{is a}\ (N_P) \text{x} (N_Q+1)\ \text{matrix with}\ \\\vec{x}_{ij} \in \textbf{X} \equiv [\{P_i Q_j\}_{min} \{P_i Q_j\}_{max} \{P_i Q_j\}_{alloc} \{P_i Q_j\}_{drop}],\ \\
+        \mathcal{S} \equiv \{\vec{S}\ |\ \vec{S} = [\textbf{X}\ \delta_{global}]^\intercal\ |\ \textbf{X}\ \text{is a}\ (N_P) \text{x} (N_Q+1)\ \text{matrix with}\ \\\vec{x}_{ij} \in \textbf{X} \equiv [\{P_i Q_j\}_{min} \{P_i Q_j\}_{max} \{P_i Q_j\}_{alloc} \{P_i Q_j\}_{drop}],\ \\
         \forall i \in \{0, 1, 2, \dots, N_P-1\}\ \text{and}\ j \in \{0, 1, 2, \dots, N_Q-1\}\}.
     \end{aligned}
 \end{equation}
 From the above definition of the state space, it is evident that the state space is huge: the exact number of total possible states depends on the design of the switch, i.e. the required minimum buffer space in the queue $\{P_i Q_j\}_{min}$, the maximum allowed buffer space in the queue $\{P_i Q_j\}_{max}$, and the size of the dedicated pool $C_{local}^{P_i}$ and the shared pool per port $C_{global}$.
-\\For a switch with three ports and two queues per port, i.e. $N_P = 3$ and $N_Q = 2$, a state in the state space can be represented as $\vec{S} = [X\ \delta_{global}]^T \in \mathcal{S}$ where, $X$ can be written as
+\\For a switch with three ports and two queues per port, i.e. $N_P = 3$ and $N_Q = 2$, a state in the state space can be represented as $\vec{S} = [X\ \delta_{global}]^\intercal \in \mathcal{S}$ where, $X$ can be written as
 $$
 \begin{bmatrix} 
 [\{P_0 Q_0\}_{min} \{P_0 Q_0\}_{max} \{P_0 Q_0\}_{alloc} \{P_0 Q_0\}_{drop}] & [\{P_0 Q_1\}_{min} \{P_0 Q_1\}_{max} \{P_0 Q_1\}_{alloc} \{P_0 Q_1\}_{drop}] & \delta_{local}^{P_0}\\
