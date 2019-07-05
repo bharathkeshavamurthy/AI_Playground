@@ -40,28 +40,28 @@ class RNNStockAnalysisScrimmage(object):
 
     # (1 - DROPOUT_RATE)
     # The keep probability for Hinton Dropout
-    # KEEP_PROBABILITY = 0.7
+    KEEP_PROBABILITY = 0.7
 
     # The pragmatic limits of the stock price in USD
     PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
 
     # The length of the look-back context
-    # A look back of 3 months ((5 + 4 + 4) weeks * 5 working days = 65)
-    LOOK_BACK_CONTEXT_LENGTH = 65
+    # A lookback context length of 39 days
+    LOOK_BACK_CONTEXT_LENGTH = 39
 
     # The length of the look-ahead predictions = The length of the test data set
-    # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is two weeks
-    LOOK_AHEAD_SIZE = 10
+    # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is one week
+    LOOK_AHEAD_SIZE = 5
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 1300
+    PROJECTED_VECTOR_SIZE = 3900
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 2600
+    NUMBER_OF_RNN_UNITS = 5200
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6500
@@ -167,8 +167,7 @@ class RNNStockAnalysisScrimmage(object):
                            recurrent_initializer='glorot_uniform',
                            stateful=True),
                 # The Hinton dropout layer
-                # TODO: Add Regularization after analyzing the fit of the designed model
-                # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
+                tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
                 # The fully connected neural network
                 # A classification-type output onto the vocabulary
                 tensorflow.keras.layers.Dense(len(self.available_vocabulary))
@@ -276,4 +275,3 @@ if __name__ == '__main__':
     visualize_predictions(rnnStockAnalysisScrimmage,
                           rnnStockAnalysisScrimmage.stock_prices_testing,
                           rnnStockAnalysisScrimmage.predict())
-

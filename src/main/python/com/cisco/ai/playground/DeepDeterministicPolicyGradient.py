@@ -250,6 +250,7 @@ class Noise(object):
     def __call__(self):
         x = self.x_prev + (self.theta * (self.mu - self.x_prev) * self.dt) + (
                 self.sigma * numpy.sqrt(self.dt) * numpy.random.normal(self.mu.shape))
+        self.x_prev = x
         return x
 
     # String representation of the object
