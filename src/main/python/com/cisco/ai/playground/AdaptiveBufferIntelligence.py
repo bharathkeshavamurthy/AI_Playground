@@ -11,14 +11,56 @@ import math
 import enum
 import numpy
 import random
+import traceback
 import tensorflow
 from collections import namedtuple, deque
 
-# A global instance
-# Environmental Feedback API entity
+# Named-Tuples are cleaner and more readable...
+
+# Environmental Feedback API entity - global instance
 FEEDBACK = namedtuple('feedback',
                       ['reward',
                        'next_state'])
+
+# The environment details are encapsulated in this namedtuple - global instance
+ENVIRONMENT_DETAILS = namedtuple('environment_details',
+                                 ['number_of_ports',
+                                  'number_of_queues_per_port',
+                                  'global_pool_size',
+                                  'dedicated_pool_size_per_port'])
+
+# The actor network design details are encapsulated in this namedtuple - global instance
+ACTOR_DESIGN_DETAILS = namedtuple('actor_design_details',
+                                  ['learning_rate',
+                                   'target_tracker_coefficient',
+                                   'batch_size',
+                                   ])
+
+# The critic network design details are encapsulated in this namedtuple - global instance
+CRITIC_DESIGN_DETAILS = namedtuple('critic_design_details',
+                                   ['learning_rate',
+                                    'target_tracker_coefficient'])
+
+# The Prioritized Experiential Replay (PER) memory details are encapsulated in this namedtuple - global instance
+REPLAY_MEMORY_DETAILS = namedtuple('replay_memory_details',
+                                   ['memory_capacity',
+                                    'prioritization_strategy',
+                                    'revisitation_constraint_constant',
+                                    'prioritization_level',
+                                    'random_seed'])
+
+# The exploration strategy details are encapsulated in this namedtuple - global instance
+EXPLORATION_STRATEGY_DETAILS = namedtuple('exploration_strategy_details',
+                                          ['exploration_strategy',
+                                           'action_dimension',
+                                           'exploration_factor',
+                                           'exploration_decay',
+                                           'exploration_factor_min',
+                                           'x0',
+                                           'mu',
+                                           'theta',
+                                           'sigma',
+                                           'dt'])
 
 
 # Enumeration entities critical to an extensible design begin here...
@@ -66,6 +108,36 @@ class ExplorationStrategy(enum):
 
 
 # Enumeration entities critical to an extensible design end here...
+
+# Utilities crucial to the design start here...
+
+# A Utilities entity consisting of design-critical validation and/or parsing routines
+class Utilities(object):
+
+    # The initialization sequence
+    def __init__(self):
+        print('[INFO] Utilities Initialization: Bringing things up...')
+        # No specific bring-up here...
+
+    # A namedtuple (ref) instance validation
+    @staticmethod
+    def custom_instance_validation(_obj, _ref):
+        _type = type(_obj)
+        _base = _type.__bases__
+        if len(_base) == 1 and _base[0] == tuple:
+            _fields = getattr(_type, '_fields', None)
+            _ref_fields = getattr(_ref, '_fields', None)
+            if isinstance(_fields, tuple) and _fields == _ref_fields:
+                return True
+        return False
+
+    # The termination sequence
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print('[INFO] Utilities Termination: Tearing things down...')
+        # No specific tear-down here...
+
+
+# Utilities crucial to the design start here...
 
 # The switch environment [Nexus] begins here...
 
@@ -188,7 +260,7 @@ class Nexus(object):
         # The switch environment state initialization has been completed...
 
     # Get the current state of the switch environment
-    def state(self):
+    def get_state(self):
         # A simple getter method for external callers
         return self.state
 
@@ -571,7 +643,7 @@ class Mnemosyne(object):
         else:
             sample = random.sample(self.memory, batch_size)
         return numpy.array([k[0] for k in sample]), numpy.array([k[1] for k in sample]), numpy.array(
-            [k[2] for k in sample]), numpy.array(k[3] for k in sample)
+            [k[2] for k in sample]), numpy.array(k[3] for k in sample), numpy.array(k[4] for k in sample)
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -580,9 +652,9 @@ class Mnemosyne(object):
 
 # The Prioritized Experiential Replay Memory [Mnemosyne] ends here...
 
-# The Exploration Noise definition begins here...
+# The Exploration Noise [Artemis] definition begins here...
 
-class ExplorationNoise(object):
+class Artemis(object):
     # The default exploration strategy - exploration factor with temporal decay
     EXPLORATION_STRATEGY = ExplorationStrategy.EXPLORATION_DECAY
 
@@ -598,7 +670,7 @@ class ExplorationNoise(object):
     # The initialization sequence
     def __init__(self, _exploration_strategy, _action_dimension, _exploration_factor=None, _exploration_decay=None,
                  _exploration_factor_min=None, _x0=None, _mu=None, _theta=0.15, _sigma=0.3, _dt=1e-2):
-        print('[INFO] ExplorationNoise Initialization: Bringing things up...')
+        print('[INFO] Artemis Initialization: Bringing things up...')
         # Initializing the input parameters with the given arguments...
         self.action_dimension = _action_dimension
         self.exploration_strategy = (lambda: self.EXPLORATION_STRATEGY,
@@ -625,7 +697,7 @@ class ExplorationNoise(object):
             self.theta = _theta
             self.sigma = _sigma
             self.dt = _dt
-        # The initialization sequence for the ExplorationNoise entity has been completed...
+        # The initialization sequence for the Artemis entity has been completed...
 
     # Return the action appended/modified with the exploration noise
     def execute(self, action):
@@ -656,22 +728,212 @@ class ExplorationNoise(object):
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
-        print('[INFO] ExplorationNoise Termination: Tearing things down...')
+        print('[INFO] Artemis Termination: Tearing things down...')
 
 
-# The Exploration Noise definition ends here...
+# The Exploration Noise [Artemis] definition ends here...
 
 # The integrated RL-agent [Apollo] begins here...
 
-# The RL-agent defined in this class controls the
+# The RL-agent defined in this class controls the A3C DDQN-PER framework
 class Apollo(object):
+    # The batch size for sampling from the prioritized experiential replay memory
+    BATCH_SIZE = 64
+
+    # The default discount factor employed in the target Q-value estimation within the Critic
+    DISCOUNT_FACTOR = 0.9
+
+    # The default maximum number of iterations per episode
+    ITERATIONS_PER_EPISODE = 1e3
+
+    # The default maximum number of episodes
+    MAXIMUM_NUMBER_OF_EPISODES = 1e5
 
     # The initialization sequence
-    def __init__(self):
+    def __init__(self, _environment_details, _actor_design_details, _critic_design_details,
+                 _replay_memory_details, _exploration_strategy_details, _batch_size, _discount_factor,
+                 _iterations_per_episode, _maximum_number_of_episodes):
         print('[INFO] Apollo Initialization: Bringing things up...')
+        # Initializing the relevant members - default to hard-coded values upon invalidation
+        self.utilities = Utilities()
+        self.environment_details = (lambda: ENVIRONMENT_DETAILS(number_of_ports=None,
+                                                                number_of_queues_per_port=None,
+                                                                global_pool_size=None,
+                                                                dedicated_pool_size_per_port=None),
+                                    lambda: _environment_details)[_environment_details is not None and
+                                                                  self.utilities.custom_instance_validation(
+                                                                      _environment_details,
+                                                                      ENVIRONMENT_DETAILS)]()
+        self.actor_design_details = (lambda: ACTOR_DESIGN_DETAILS(learning_rate=None,
+                                                                  target_tracker_coefficient=None,
+                                                                  batch_size=None),
+                                     lambda: _actor_design_details)[_actor_design_details is not None and
+                                                                    self.utilities.custom_instance_validation(
+                                                                        _actor_design_details,
+                                                                        ACTOR_DESIGN_DETAILS)]()
+        self.critic_design_details = (lambda: CRITIC_DESIGN_DETAILS(learning_rate=None,
+                                                                    target_tracker_coefficient=None),
+                                      lambda: _critic_design_details)[_critic_design_details is not None and
+                                                                      self.utilities.custom_instance_validation(
+                                                                          _critic_design_details,
+                                                                          CRITIC_DESIGN_DETAILS)]()
+        self.replay_memory_details = (lambda: REPLAY_MEMORY_DETAILS(memory_capacity=None,
+                                                                    prioritization_strategy=None,
+                                                                    revisitation_constraint_constant=None,
+                                                                    prioritization_level=None,
+                                                                    random_seed=None),
+                                      lambda: _replay_memory_details)[_replay_memory_details is not None and
+                                                                      self.utilities.custom_instance_validation(
+                                                                          _replay_memory_details,
+                                                                          REPLAY_MEMORY_DETAILS)]()
+        self.exploration_strategy_details = (lambda: EXPLORATION_STRATEGY_DETAILS(exploration_strategy=None,
+                                                                                  action_dimension=None,
+                                                                                  exploration_factor=None,
+                                                                                  exploration_decay=None,
+                                                                                  exploration_factor_min=None,
+                                                                                  x0=None,
+                                                                                  mu=None,
+                                                                                  theta=None,
+                                                                                  sigma=None,
+                                                                                  dt=None),
+                                             lambda: _exploration_strategy_details)[
+            _exploration_strategy_details is not None and
+            self.utilities.custom_instance_validation(_exploration_strategy_details,
+                                                      EXPLORATION_STRATEGY_DETAILS)]()
+        self.batch_size = (lambda: self.BATCH_SIZE,
+                           lambda: _batch_size)[_batch_size is not None and
+                                                isinstance(_batch_size, int) and
+                                                _batch_size > 0]()
+        self.discount_factor = (lambda: self.DISCOUNT_FACTOR,
+                                lambda: _discount_factor)[_discount_factor is not None and
+                                                          0.5 < _discount_factor < 1]()
+        self.iterations_per_episode = (lambda: self.ITERATIONS_PER_EPISODE,
+                                       lambda: _iterations_per_episode)[_iterations_per_episode is not None and
+                                                                        isinstance(_iterations_per_episode, int) and
+                                                                        _iterations_per_episode > 0]()
+        self.maximum_number_of_episodes = (lambda: self.MAXIMUM_NUMBER_OF_EPISODES,
+                                           lambda: _maximum_number_of_episodes)[
+            _maximum_number_of_episodes is not None and
+            isinstance(_maximum_number_of_episodes, int) and
+            _maximum_number_of_episodes > 0]()
+        # Create the Nexus switch environment
+        self.nexus = Nexus(self.environment_details.number_of_ports,
+                           self.environment_details.number_of_queues_per_port,
+                           self.environment_details.global_pool_size,
+                           self.environment_details.dedicated_pool_size_per_port)
+        # Get the switch environment details from the created Nexus instance
+        self.state_dimension = self.nexus.get_state_dimension()
+        self.action_dimension = self.nexus.get_action_dimension()
+        self.action_bounds = self.nexus.get_action_bounds()
+        # Create the Actor and Critic Networks
+        self.actor = Actor(self.state_dimension,
+                           self.action_dimension,
+                           self.action_bounds,
+                           self.actor_design_details.learning_rate,
+                           self.actor_design_details.target_tracker_coefficient,
+                           self.actor_design_details.batch_size)
+        self.critic = Critic(self.state_dimension,
+                             self.action_dimension,
+                             self.critic_design_details.learning_rate,
+                             self.critic_design_details.target_tracker_coefficient)
+        # Initialize the Prioritized Experiential Replay Memory
+        self.mnemosyne = Mnemosyne(self.replay_memory_details.memory_capacity,
+                                   self.replay_memory_details.prioritization_strategy,
+                                   self.replay_memory_details.revisitation_constraint_constant,
+                                   self.replay_memory_details.prioritization_level,
+                                   self.replay_memory_details.random_seed)
+        # Initialize the Exploration Noise Generator
+        self.artemis = Artemis(self.exploration_strategy_details.exploration_strategy,
+                               self.exploration_strategy_details.action_dimension,
+                               self.exploration_strategy_details.exploration_factor,
+                               self.exploration_strategy_details.exploration_decay,
+                               self.exploration_strategy_details.exploration_factor_min,
+                               self.exploration_strategy_details.x0,
+                               self.exploration_strategy_details.mu,
+                               self.exploration_strategy_details.theta,
+                               self.exploration_strategy_details.sigma,
+                               self.exploration_strategy_details.dt)
+        # The initialization sequence has been completed
+
+    # Start the interaction with the environment and the training process
+    def train(self):
+        print('[INFO] Apollo train: Interacting with the switch environment and initiating the training process')
+        try:
+            # Build the Actor and Critic Networks
+            self.actor.build()
+            self.critic.build()
+            for episode in range(self.maximum_number_of_episodes):
+                for iteration in range(self.iterations_per_episode):
+                    # Initialize/Re-Train/Update the target networks in this off-policy DDQN-architecture
+                    self.actor.update_targets()
+                    self.critic.update_targets()
+                    # Observe the state, execute an action, and get the feedback from the switch environment
+                    # Automatic next_state transition fed in by using the Nexus instance
+                    # Transition and validation is encapsulated within Nexus
+                    state = self.nexus.get_state()
+                    action = self.artemis.execute(self.actor.predict(state))
+                    feedback = self.nexus.execute(action)
+                    # Validation - exit if invalid
+                    if feedback is None or self.utilities.custom_instance_validation(feedback, FEEDBACK) is False:
+                        print('[ERROR] Apollo train: Invalid feedback received from the environment. '
+                              'Please check the compatibility between Apollo and the Nexus variant')
+                        return False
+                    # Find the target Q-value, the predicted Q-value, and subsequently the TD-error
+                    target_q = feedback.reward + (self.discount_factor * self.critic.predict_targets(
+                        feedback.next_state, self.actor.predict_targets(feedback.next_state)))
+                    predicted_q = self.critic.predict(state,
+                                                      action)
+                    td_error = predicted_q - target_q
+                    # Remember this experience
+                    self.mnemosyne.remember(state,
+                                            action,
+                                            feedback.reward,
+                                            feedback.next_state,
+                                            td_error)
+                    # Start the replay sequence for training
+                    if len(self.mnemosyne.memory) >= self.batch_size:
+                        # Prioritization strategy specific replay
+                        s_batch, a_batch, r_batch, s2_batch, td_error_batch = self.mnemosyne.replay(self.batch_size)
+                        target_q = self.critic.predict_targets(s2_batch,
+                                                               self.actor.predict_targets(s2_batch))
+                        target_q_values = []
+                        for k in range(self.batch_size):
+                            target_q_values.append(r_batch[k] + (self.discount_factor * target_q[k]))
+                        # Train the Critic - standard MSE optimization
+                        self.critic.train(self.critic.predict(s_batch,
+                                                              a_batch),
+                                          numpy.reshape(target_q_values,
+                                                        newshape=(1, self.batch_size)))
+                        # Get the action gradients for DDPG
+                        action_gradients = self.critic.get_action_gradients(s_batch,
+                                                                            self.actor.predict(s_batch))
+                        # Train the Actor - DDPG
+                        self.actor.train(self.actor.predict(s_batch),
+                                         action_gradients[0])
+        except Exception as exception:
+            print('[ERROR] Apollo train: Exception caught while interacting with the Nexus switch environment and '
+                  'training the Actor-Critic DDQN-PER framework - [{}]'.format(exception))
+            traceback.print_tb(exception.__traceback__)
+            return False
+        # Environment Interaction and Training has been completed...
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
         print('[INFO] Apollo Termination: Tearing things down...')
 
+
 # The integrated RL-agent [Apollo] ends here...
+
+# The test entity [Ares] begins here...
+
+class Ares(object):
+
+    # The initialization sequence
+    def __init__(self):
+        print('[INFO] Ares Initialization: Bringing things up...')
+
+    # The termination sequence
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        print('[INFO] Ares Termination: Tearing things down...')
+
+# The test entity [Ares] ends here...

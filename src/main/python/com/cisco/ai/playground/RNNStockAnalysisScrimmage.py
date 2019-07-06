@@ -46,8 +46,8 @@ class RNNStockAnalysisScrimmage(object):
     PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
 
     # The length of the look-back context
-    # A lookback context length of 39 days
-    LOOK_BACK_CONTEXT_LENGTH = 39
+    # A lookback context length of 65 days (3 months = (4 + 4 + 5) weeks * 5 days per week = 65 days look-back)
+    LOOK_BACK_CONTEXT_LENGTH = 65
 
     # The length of the look-ahead predictions = The length of the test data set
     # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is one week
