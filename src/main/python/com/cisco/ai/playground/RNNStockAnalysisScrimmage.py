@@ -55,13 +55,13 @@ class RNNStockAnalysisScrimmage(object):
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 3900
+    PROJECTED_VECTOR_SIZE = 2600
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 5200
+    NUMBER_OF_RNN_UNITS = 3900
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6500

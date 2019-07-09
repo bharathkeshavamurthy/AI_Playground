@@ -13,7 +13,13 @@ import numpy
 import random
 import traceback
 import tensorflow
+from threading import Lock
 from collections import namedtuple, deque
+
+# Mutexes for various threads to access shared objects
+
+# The shared environment mutex
+nexus_mutex = Lock()
 
 # Named-Tuples are cleaner and more readable...
 
@@ -183,6 +189,12 @@ class Nexus(object):
                         'leftover_buffer_units_in_the_global_pool'
                         ])
 
+    # The service rate of high-priority queues
+    HIGH_PRIORITY_QUEUE_SERVICE_RATE = 40
+
+    # The service rate of low-priority queues
+    LOW_PRIORITY_QUEUE_SERVICE_RATE = 8
+
     # The initialization sequence
     def __init__(self, _number_of_ports, _number_of_queues_per_port, _global_pool_size, _dedicated_pool_size_per_port):
         print('[INFO] Nexus Initialization: Bringing things up...')
@@ -221,6 +233,8 @@ class Nexus(object):
         # A flag which indicated gross incompetence exhibited by the RL agent
         # If this flag is set to true, impose sky-high tariffs...
         self.incompetence = False
+        # A termination flag to indicate that the switch has been shut down
+        self.shutdown = False
         # The initialization sequence has been completed...
 
     # Initialize the system state
@@ -347,6 +361,12 @@ class Nexus(object):
         return FEEDBACK(reward=self.reward(),
                         next_state=self.state)
         # The state transition of the underlying MDP has been completed...
+
+    # Shutdown the system
+    def initiate_shutdown(self):
+        self.shutdown = True
+        # Normal exit sequence
+        self.__exit__(None, None, None)
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -910,6 +930,8 @@ class Apollo(object):
                         # Train the Actor - DDPG
                         self.actor.train(self.actor.predict(s_batch),
                                          action_gradients[0])
+            # Episodic analysis has been completed - send a command to the switch to shut down
+            self.nexus.initiate_shutdown()
         except Exception as exception:
             print('[ERROR] Apollo train: Exception caught while interacting with the Nexus switch environment and '
                   'training the Actor-Critic DDQN-PER framework - [{}]'.format(exception))
@@ -926,14 +948,97 @@ class Apollo(object):
 
 # The test entity [Ares] begins here...
 
+# This class models the event arrival and service process at each queue in the switch
+# This entity also serves as a monitoring API - monitoring the arrival times and departure times of packets,...
+# ...the number of packets pending in the queueing system, and the number of packets dropped at each queue.
 class Ares(object):
 
     # The initialization sequence
-    def __init__(self):
+    def __init__(self, _nexus):
         print('[INFO] Ares Initialization: Bringing things up...')
+        # Setting up the switch environment and re-assigning input parameters
+        self.nexus = _nexus
+        # Assign arrival rates to each individual queue
+        self.arrival_rates = []
+        for p in range(self.nexus.number_of_ports):
+            port_specific_arrival_rates = []
+            for q in range(self.nexus.number_of_queues_per_port):
+                if self.nexus.get_state().ports[p].queues[q].priority == Priority.HIGH_PRIORITY:
+                    # A slightly higher arrival rate for high-priority queues
+                    port_specific_arrival_rates.append(random.randrange(1, 16, 0.1))
+                else:
+                    # A lower arrival rate for low-priority queues
+                    port_specific_arrival_rates.append(random.randrange(1, 8, 0.1))
+            self.arrival_rates.append(port_specific_arrival_rates)
+        # Assign service rates to each individual queue
+        self.service_rates = []
+        for p in range(self.nexus.number_of_ports):
+            port_specific_service_rates = []
+            for q in range(self.nexus.number_of_queues_per_port):
+                if self.nexus.get_state().ports[p].queues[q].priority == Priority.HIGH_PRIORITY:
+                    port_specific_service_rates.append(self.nexus.HIGH_PRIORITY_QUEUE_SERVICE_RATE)
+                else:
+                    port_specific_service_rates.append(self.nexus.LOW_PRIORITY_QUEUE_SERVICE_RATE)
+            self.service_rates.append(port_specific_service_rates)
+        # Initializing the pending number of packets in each queueing system
+        self.pending_packets = [[((0 * p) + (0 * q)) for q in range(self.nexus.number_of_queues_per_port)]
+                                for p in self.nexus.number_of_ports]
+        # The initialization sequence has been completed...
+
+    # Simulate a Poisson arrival process, an Exponential service process,...
+    # Extract the number of available buffer spaces in each queue, and...
+    # Evaluate the number of simulated packets that would be dropped.
+    # Then, populate the "packet_drop_count" field per queue per port in the environment's state variable.
+    def start(self):
+        print('[INFO] Ares start: Acquiring the mutex and analyzing the state of the switch environment...')
+        nexus_mutex.acquire()
+        try:
+            # The switch should be up and running
+            if self.nexus.shutdown is False:
+                for p in range(self.nexus.number_of_ports):
+                    for q in range(self.nexus.number_of_queues_per_port):
+                        # Model the arrival process
+                        # Don't set a seed here - let's analyze the operation across multiple inconsistent runs...
+                        arrival_count = 0
+                        arrival_times = []
+                        arrival_time = (-numpy.log(numpy.random.random_sample())) / self.arrival_rates[p][q]
+                        while arrival_time <= 1.0:
+                            arrival_count += 1
+                            arrival_times.append(arrival_time)
+                            arrival_time -= (-numpy.log(numpy.random.random_sample())) / self.arrival_rates[p][q]
+                        pending = self.pending_packets[p][q] + len(arrival_times)
+                        # Model the service process
+                        # Don't set a seed here - let's analyze the operation across multiple inconsistent runs...
+                        service_times = (-numpy.log(numpy.random.random(1, pending))) / self.service_rates[p][q]
+                        localized_run_time = 0
+                        for packet in range(pending):
+                            localized_run_time += service_times[packet]
+                            if localized_run_time <= 1.0:
+                                pending -= 1
+                            else:
+                                break
+                        dropped = 0
+                        allocated = self.nexus.get_state().ports[p].queues[q].allocated_buffer_units
+                        # Update the pending count based on the current allocation
+                        if allocated < pending:
+                            dropped = pending - allocated
+                            self.pending_packets[p][q] = allocated
+                        else:
+                            self.pending_packets[p][q] = pending
+                        # Update the drop count
+                        self.nexus.get_state().ports[p].queues[q].packet_drop_count = dropped
+        except Exception as exception:
+            print('[ERROR] Ares start: Exception caught while simulating packet arrival and '
+                  'analyzing switch performance - [{}]'.format(exception))
+            traceback.print_tb(exception.__traceback__)
+        finally:
+            # Release the mutex
+            nexus_mutex.release()
+        # Ares analysis has been completed...
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
         print('[INFO] Ares Termination: Tearing things down...')
 
 # The test entity [Ares] ends here...
+
