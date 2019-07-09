@@ -6,20 +6,22 @@
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
+# TODO: A logging framework instead of all these formatted print statements...
+
 # The imports
 import math
 import enum
 import numpy
 import random
 import traceback
+import threading
 import tensorflow
-from threading import Lock
 from collections import namedtuple, deque
 
 # Mutexes for various threads to access shared objects
 
 # The shared environment mutex
-nexus_mutex = Lock()
+caerus = threading.Lock()
 
 # Named-Tuples are cleaner and more readable...
 
@@ -562,7 +564,7 @@ class Mnemosyne(object):
     PRIORITIZATION_STRATEGY = Prioritization.RANDOM
 
     # The default random seed (if the prioritization strategy is Prioritization.RANDOM)
-    RANDOM_SEED_VALUE = 12345
+    RANDOM_SEED_VALUE = 666
 
     # A positive constant that prevents edge-case transitions from being sampled/revisited
     # The default revisitation constraint constant
@@ -876,7 +878,7 @@ class Apollo(object):
         # The initialization sequence has been completed
 
     # Start the interaction with the environment and the training process
-    def train(self):
+    def start(self):
         print('[INFO] Apollo train: Interacting with the switch environment and initiating the training process')
         try:
             # Build the Actor and Critic Networks
@@ -890,9 +892,13 @@ class Apollo(object):
                     # Observe the state, execute an action, and get the feedback from the switch environment
                     # Automatic next_state transition fed in by using the Nexus instance
                     # Transition and validation is encapsulated within Nexus
+                    # Mutex acquisition
+                    caerus.acquire()
                     state = self.nexus.get_state()
                     action = self.artemis.execute(self.actor.predict(state))
                     feedback = self.nexus.execute(action)
+                    # Mutex release
+                    caerus.release()
                     # Validation - exit if invalid
                     if feedback is None or self.utilities.custom_instance_validation(feedback, FEEDBACK) is False:
                         print('[ERROR] Apollo train: Invalid feedback received from the environment. '
@@ -936,7 +942,9 @@ class Apollo(object):
             print('[ERROR] Apollo train: Exception caught while interacting with the Nexus switch environment and '
                   'training the Actor-Critic DDQN-PER framework - [{}]'.format(exception))
             traceback.print_tb(exception.__traceback__)
-            return False
+        finally:
+            if caerus.locked():
+                caerus.release()
         # Environment Interaction and Training has been completed...
 
     # The termination sequence
@@ -991,7 +999,7 @@ class Ares(object):
     # Then, populate the "packet_drop_count" field per queue per port in the environment's state variable.
     def start(self):
         print('[INFO] Ares start: Acquiring the mutex and analyzing the state of the switch environment...')
-        nexus_mutex.acquire()
+        caerus.acquire()
         try:
             # The switch should be up and running
             if self.nexus.shutdown is False:
@@ -1033,12 +1041,79 @@ class Ares(object):
             traceback.print_tb(exception.__traceback__)
         finally:
             # Release the mutex
-            nexus_mutex.release()
+            caerus.release()
         # Ares analysis has been completed...
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
         print('[INFO] Ares Termination: Tearing things down...')
 
+
 # The test entity [Ares] ends here...
 
+# The AdaptiveBufferIntelligence main routine begins here...
+if __name__ == '__main__':
+    print('[INFO] AdaptiveBufferIntelligence Trigger: Starting system assessment...')
+    # Nexus Design
+    number_of_ports = 3
+    number_of_queues_per_port = 3
+    global_pool_size = 120
+    dedicated_pool_size_per_port = 40
+    nexus = Nexus(number_of_ports, number_of_queues_per_port, global_pool_size, dedicated_pool_size_per_port)
+    action_dimension = nexus.get_action_dimension()
+    environment_details = ENVIRONMENT_DETAILS(number_of_ports=number_of_ports,
+                                              number_of_queues_per_port=number_of_queues_per_port,
+                                              global_pool_size=global_pool_size,
+                                              dedicated_pool_size_per_port=dedicated_pool_size_per_port)
+    # Actor Design
+    actor_design_details = ACTOR_DESIGN_DETAILS(learning_rate=1e-4,
+                                                target_tracker_coefficient=0.01,
+                                                batch_size=64)
+    # Critic Design
+    critic_design_details = CRITIC_DESIGN_DETAILS(learning_rate=1e-5,
+                                                  target_tracker_coefficient=0.01)
+    # Replay Memory Design
+    replay_memory_design_details = REPLAY_MEMORY_DETAILS(memory_capacity=1e9,
+                                                         prioritization_strategy=Prioritization.RANDOM,
+                                                         revisitation_constraint_constant=None,
+                                                         prioritization_level=None,
+                                                         random_seed=666)
+    # Exploration Strategy Design
+    exploration_strategy_design_details = EXPLORATION_STRATEGY_DETAILS(
+        exploration_strategy=ExplorationStrategy.ORNSTEIN_UHLENBECK_NOISE,
+        action_dimension=action_dimension,
+        exploration_factor=None,
+        exploration_decay=None,
+        exploration_factor_min=None,
+        x0=None,
+        mu=numpy.zeros(action_dimension),
+        theta=0.15,
+        sigma=0.3,
+        dt=1e-2)
+    # Batch Size / Batch Area
+    batch_area = 64
+    # Discount Factor
+    discount_factor = 0.9
+    # Iterations per Episode
+    iterations_per_episode = 1e3
+    # Maximum Number of Episodes
+    maximum_number_of_episodes = 1e5
+    # Create a timer thread for Ares initialized with Nexus and start the evaluation thread
+    # Additionally, create an instance of Apollo and start that simultaneously
+    apollo = Apollo(environment_details, actor_design_details, critic_design_details, replay_memory_design_details,
+                    exploration_strategy_design_details, batch_area, discount_factor, iterations_per_episode,
+                    maximum_number_of_episodes)
+    ares = Ares(nexus)
+    # The timer interval for Cronus controlling Ares
+    timer_interval = 1.0
+    # Create individual threads for Ares (cronus_thread) and Apollo (apollo_thread)
+    cronus_thread = threading.Timer(timer_interval, ares.start)
+    apollo_thread = threading.Thread(target=apollo.start)
+    print('[INFO] AdaptiveBufferIntelligence Trigger: Starting Ares... [cronus_thread]')
+    cronus_thread.start()
+    print('[INFO] AdaptiveBufferIntelligence Trigger: Starting Apollo... [apollo_thread]')
+    apollo_thread.start()
+    print('[INFO] AdaptiveBufferIntelligence Trigger: Joining all spawned threads...')
+    cronus_thread.join()
+    apollo_thread.join()
+    print('[INFO] AdaptiveBufferIntelligence Trigger: Completed system assessment...')
