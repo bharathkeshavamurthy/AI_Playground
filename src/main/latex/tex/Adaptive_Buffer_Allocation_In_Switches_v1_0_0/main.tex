@@ -104,10 +104,10 @@ where, $\delta_{local}^{P_i}$ denotes the leftover buffer space in the dedicated
 The action space of the underlying MDP is modelled as,
 \begin{equation}
     \begin{aligned}
-        \mathcal{A} \equiv \{A\ |\ A = \{\vec{a} \ |\ \vec{a} \equiv [a_{ij}]\}\}.
+        \mathcal{A} \equiv \{\vec{A} = [A,\ \Delta C_{global}]^\intercal\ |\ A = [a_{ij}]\}.
     \end{aligned}
 \end{equation}
-where, $\vec{a}$ is a row vector and $a_{ij} \in \vec{a}$ corresponds to the \textit{increment}, \textit{decrement}, or \textit{no-change} operation s.t. $0 \leq a_{ij} \leq \{P_i Q_j\}_{max}$ and $a_{ij} \in \mathbb{Z}_{++} \cup \{0\}$, for any $i \in \{0, 1, 2, \dots, N_P-1\}$ and $\forall j \in \{0, 1, 2, \dots, N_Q-1\}$ corresponding to that particular $i$.
+where, $a_{ij}$ corresponds to $\Delta m$ where, $\Delta m$ corresponds to a change (increment or decrement in the allocated buffer units) with respect to the queues corresponding to a port or the change (increment or decrement in the leftover buffer units) with respect to the dedicated local pool of a specific port. Furthermore, $\Delta C_{global}$ denotes the change (increment or decrement in the leftover buffer units) with respect to the global pool of the switch.
 \subsection{The Observation Space}
 \begin{itemize}
     \item Within the context of the design of a switch, it does not make sense to consider partially observable (incomplete observations and/or noisy observations), hence, we will not approach this problem as a \textbf{Partially Observable Markov Decision Process (POMDP)} one.
@@ -130,7 +130,7 @@ where, $\vec{a}$ is a row vector and $a_{ij} \in \vec{a}$ corresponds to the \te
 \begin{itemize}
     \item As we go through the state space, the action space, the observation space, and the reward/cost metrics, we realize that we're dealing with enormous state and action spaces whose size increases exponentially with an increase in the number of ports, queues, and buffer spaces corresponding to them.
     \item Owing to this \textbf{curse of dimensionality}, standard MDP techniques such as Value Iteration and Policy Iteration are rendered infeasible. For enormous state spaces, considering the fact that the transition, emission, and initial steady-state models of the underlying MDP are unknown, a model-free learning technique known as \textbf{Q-Learning} can be employed.
-    \item However, computing the Q-values for every state-action pair in this enormous state and action space environment would be impossible considering the prowess of today's computational systems on-board the switch and the fact that we need almost real-time allocation recommendations in deployment. \textbf{Deep-Q-Networks} (use an Artificial Neural Network (ANN) to evaluate the Q-value for a given state-action pair and pick the action with the largest Q-value for the given input state) offer a feasible solution in this scenario, however, the presence of an enormous action space causes the number of neurons in the output layer of the ANN to explode, which increases the number of training parameters, which in turn increases the training time.
+    \item However, computing the Q-values for every state-action pair in this enormous state and action space environment would be impossible considering the prowess of today's computational systems. \textbf{Deep-Q-Networks} (use an Artificial Neural Network (ANN) to evaluate the Q-value for a given state-action pair and pick the action with the largest Q-value for the given input state) offer a feasible solution in this scenario, however, the presence of an enormous action space causes the number of neurons in the output layer of the ANN to explode, which increases the number of training parameters, which in turn increases the training time.
     \item In order to solve the problem of increased training times, we employ an \textbf{Asynchronous Advantage Actor-Critic (A3C)} architecture employing \textbf{Double Deep-Q-Networks (DDQNs)} with a \textbf{Deep Deterministic Policy Gradient (DDPG)} Optimization used within the Actor network.
 \end{itemize}
 \section{State-of-the-Art}
@@ -225,7 +225,7 @@ where, $\vec{a}$ is a row vector and $a_{ij} \in \vec{a}$ corresponds to the \te
     \begin{equation}\label{18}
         u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma dW_{t}
     \end{equation}
-    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has \textbf{independent increments}- $W_{p+q} - W_{p},\ p > 0\ and\ q \geq 0$ is independent of $W_{m},\ m < t$ and \textbf{Gaussian increments}- $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$.
+    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has \textbf{independent increments}: $W_{p+q} - W_{p},\ p > 0\ and\ q \geq 0$ is independent of $W_{m},\ m < t$ and \textbf{Gaussian increments}: $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$.
     \\Mathematically,
     \begin{equation}\label{19}
         dW_{t} \sim \mathcal{N}(0, dt) = \sqrt{dt} \mathcal{N}(0, 1)
