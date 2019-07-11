@@ -18,6 +18,9 @@ import threading
 import tensorflow
 from collections import namedtuple, deque
 
+# Enable eager execution for converting tensors into numpy arrays and vice versa
+tensorflow.enable_eager_execution()
+
 # Mutexes for various threads to access shared objects
 
 # The shared environment mutex
@@ -280,6 +283,56 @@ class Nexus(object):
         # A simple getter method for external callers
         return self.state
 
+    # Construct a tensor from the high-level Nexus state and pass it down to the calling routine for...
+    # ...analysis/input into the NNs
+    def get_state_tensor(self):
+        ports = []
+        try:
+            # The ports loop - p
+            for port in range(self.number_of_ports):
+                queues = []
+                # The queues loop - q
+                for queue in range(self.number_of_queues_per_port):
+                    queue_state = self.state.ports[port].queues[queue]
+                    queues.append([queue_state.required_minimum_capacity,
+                                   queue_state.allowed_maximum_buffer_capacity,
+                                   queue_state.allocated_buffer_units,
+                                   queue_state.packet_drop_count])
+                ports.append(tensorflow.convert_to_tensor(
+                    numpy.append(tensorflow.constant(queues,
+                                                     dtype=tensorflow.int32).numpy(),
+                                 self.state.ports[port].leftover_buffer_units_in_the_dedicated_pool),
+                    dtype=tensorflow.int32))
+            return tensorflow.convert_to_tensor(
+                numpy.append(tensorflow.stack(ports, axis=0).numpy(),
+                             self.state.leftover_buffer_units_in_the_global_pool),
+                dtype=tensorflow.int32)
+        except Exception as exception:
+            print('[ERROR] Nexus get_state_tensor: Exception caught while formatting the state of the switch - '
+                  '[{}]'.format(exception))
+            traceback.print_tb(exception.__traceback__)
+        return None
+
+    # In order to get the action dimension, assume an initial policy of NOP across all queues, ports, and pools.
+    # Return the dimensions of the action - output of Apollo
+    def get_action_dimension(self):
+        ports = []
+        try:
+            # The ports loop - p
+            for port in range(self.number_of_ports):
+                # NOPs w.r.t the queues of port 'p' and the dedicated pool size of port 'p'
+                ports.append([k - k for k in range(self.number_of_queues_per_port + 1)])
+            # Append the NOP to the global pool size of Nexus and return the dimensions of the resultant tensor
+            return tensorflow.convert_to_tensor(
+                numpy.append(tensorflow.constant(ports, axis=0).numpy(),
+                             0),
+                dtype=tensorflow.int32).shape
+        except Exception as exception:
+            print('[ERROR] Nexus get_action_dimension: Exception caught while determining the '
+                  'compliant action dimension - [{}]'.format(exception))
+            traceback.print_tb(exception.__traceback__)
+        return None
+
     # Validate the new state - check if it complies with the switch design, given the current state
     def validate(self, new_state):
         print('[DEBUG] Nexus validate: Validating the state transition of the underlying MDP...')
@@ -388,13 +441,12 @@ class Actor(object):
     NUMBER_OF_HIDDEN_NEURONS = 3900
 
     # The initialization sequence
-    def __init__(self, _state_dimension, _action_dimension, _action_bounds, _learning_rate,
+    def __init__(self, _state_dimension, _action_dimension, _learning_rate,
                  _target_tracker_coefficient, _batch_size):
         print('[INFO] Actor Initialization: Bringing things up...')
         # Initializing the essential input parameters with the given arguments
         self.state_dimension = _state_dimension
         self.action_dimension = _action_dimension
-        self.action_bounds = _action_bounds
         self.learning_rate = _learning_rate
         self.target_tracker_coefficient = _target_tracker_coefficient
         self.batch_size = _batch_size
@@ -430,8 +482,7 @@ class Actor(object):
                                                             -action_gradients)
         # Normalization w.r.t the batch size - this refers to the expectation operator in the Policy Gradient step
         normalized_actor_gradients = list(map(lambda x: tensorflow.div(x, self.batch_size),
-                                              unnormalized_actor_gradients)
-                                          )
+                                              unnormalized_actor_gradients))
         # Adam Optimizer
         return tensorflow.train.AdamOptimizer(learning_rate=self.learning_rate).apply_gradients(
             zip(normalized_actor_gradients, self.model.trainable_variables)
@@ -441,8 +492,7 @@ class Actor(object):
     # Predict actions for either the batch of states sampled from the replay memory OR...
     # ...for the individual state observed from the switch environment
     def predict(self, state_batch):
-        return tensorflow.multiply(self.model(state_batch),
-                                   self.action_bounds)
+        return self.model(state_batch)
 
     # Soft target update procedure
     def update_targets(self):
@@ -454,8 +504,7 @@ class Actor(object):
 
     # Predict actions from the target network for target Q-value evaluation during training, i.e. (r_t + \gamma Q(s, a))
     def predict_targets(self, target_state_batch):
-        return tensorflow.multiply(self.target_model(target_state_batch),
-                                   self.action_bounds)
+        return self.target_model(target_state_batch)
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -844,13 +893,11 @@ class Apollo(object):
                            self.environment_details.global_pool_size,
                            self.environment_details.dedicated_pool_size_per_port)
         # Get the switch environment details from the created Nexus instance
-        self.state_dimension = self.nexus.get_state_dimension()
+        self.state_dimension = self.nexus.get_state_tensor().shape
         self.action_dimension = self.nexus.get_action_dimension()
-        self.action_bounds = self.nexus.get_action_bounds()
         # Create the Actor and Critic Networks
         self.actor = Actor(self.state_dimension,
                            self.action_dimension,
-                           self.action_bounds,
                            self.actor_design_details.learning_rate,
                            self.actor_design_details.target_tracker_coefficient,
                            self.actor_design_details.batch_size)
@@ -894,7 +941,7 @@ class Apollo(object):
                     # Transition and validation is encapsulated within Nexus
                     # Mutex acquisition
                     caerus.acquire()
-                    state = self.nexus.get_state()
+                    state = self.nexus.get_state_tensor()
                     action = self.artemis.execute(self.actor.predict(state))
                     feedback = self.nexus.execute(action)
                     # Mutex release
