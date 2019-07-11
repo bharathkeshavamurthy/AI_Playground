@@ -1,0 +1,98 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[affil-it]{authblk}
+\usepackage[T1]{fontenc}
+\usepackage{subfigure}
+\usepackage{ulem}
+\usepackage{amsmath}
+\allowdisplaybreaks
+\usepackage{hhline}
+\usepackage{yfonts,color}
+\usepackage{soul,xcolor}
+\usepackage{verbatim}
+\usepackage{amsmath}
+\allowdisplaybreaks
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{float}
+\usepackage{bm}
+\usepackage{url}
+\usepackage{array}
+\usepackage{cite}
+\usepackage{graphicx}
+\usepackage{framed}
+\usepackage{balance}
+\usepackage{epsfig,epstopdf}
+\usepackage{booktabs}
+\usepackage{courier}
+\usepackage{subfigure}
+\usepackage{enumerate}
+\usepackage[export]{adjustbox}
+\newtheorem{definition}{Definition}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{assumption}{Assumption}
+\newtheorem{remark}{Remark}
+\newcommand{\rom}[1]{\uppercase\expandafter{\romannumeral #1\relax}}
+\usepackage{color}
+\usepackage{soul,xcolor}
+\newcommand{\nm}[1]{{\color{blue}\text{\bf{[NM: #1]}}}}
+\newcommand{\sst}[1]{\st{#1}}
+\newcommand{\gs}[1]{{\color{orange}\bf{[GS: #1]}}}
+\newcommand{\remove}[1]{{\color{magenta}{\bf REMOVE: [#1]}}}
+\newcommand{\add}[1]{{\color{red}{#1}}}
+\newcommand{\ull}[1]{\textbf{\color{red}\ul{#1}}}
+\normalem
+\usepackage{hyperref}
+\DeclareMathOperator*{\argmax}{argmax}
+\DeclareMathOperator*{\argmin}{argmin}
+\title{%
+      Link Failure Prediction Analysis using Recurrent Neural Networks\\
+      \large Inspired by Language Modelling}
+\author{Bharath Keshavamurthy and Imran Pasha}
+\affil{CISCO Systems, Inc.}
+\date{June 2019}
+\begin{document}
+\maketitle
+\section{References}
+\begin{enumerate}
+    \item B. Keshavamurthy and I. Pasha,\\ \href{https://1drv.ms/b/s!AuBe4WWXT0UOarnWAt3jLcnOvPs}{``\textcolor{blue}{Correlation and Causation Analysis in Black Box Deep Learning Models: A Mathematical Framework"}}, June 2019\label{1}
+\end{enumerate}
+\section{System Model}
+\begin{itemize}
+    \item \textbf{Primary Task}: Binary Classification - The link under analysis progresses into a ``Failed State" (1) or stays in a ``Normal Operational State" (0)
+    \item \textbf{Secondary Task}: Determine the progression of parameters essential for the primary task using time-series context-based estimation techniques
+    \item In order to predict the failure of a link, we employ \textbf{Recurrent Neural Networks (RNNs)} to provide time-series estimates of the link parameters using historical context windows and use these look-ahead estimates to determine the progression of the state of the link.
+    \item Additionally, the negative results of the primary prediction task are fed into the \textbf{Prediction Rationale Engine} (discussed in [\ref{1}]) in order to determine the root cause(s) for the link progressing into a ``Failed State".
+    \item The primary task involves a standard Neural Networks based classification engine. This will not be discussed in this document.
+    \item The causation analysis engine (Prediction Rationale Engine) is discussed in detail in [\ref{1}].
+    \item This document primarily deals with the design of the RNN-based time-series parameter estimation engine.
+\end{itemize}
+\section{Time-Series Parameter Estimation using RNNs}
+\begin{itemize}
+    \item For the sake of this document and in order to generalize the application of this model, let us assume we are concerned with the time-series progression analysis of one design parameter/control variable denoted by $\alpha$.
+    \item We first construct a \textbf{vocabulary} for this parameter which helps us bound the possible values it can take on. This is a reasonable assumption because the possible values allowed for a particular feature in any given Machine Learning task is a finite set.
+    \item The vocabulary needs to be processed in order to handle both numeric and categorical features. The entries in the feature vocabulary are mapped to integers using a one-to-one function $f: \mathcal{A} \rightarrow \mathbb{Z}$, where $\mathcal{A}$ is the vocabulary space of the feature.
+    \item A few design parameters employed in this model are:
+    \begin{itemize}
+        \item $\omega$ denotes the length of the \textbf{look-back context window}, i.e. the number of past samples considered for the prediction of the next (future) sample value
+        \item $\Omega$ denotes the length of the \textbf{look-ahead horizon}, i.e. the number of future samples to be predicted by this engine
+        \item $\lambda$ denotes the length of the sample sequences before splitting them into input and target samples, i.e. $\lambda = \omega + 1$
+        \item $\beta$ denotes the \textbf{batch size} for training
+    \end{itemize}
+    \item The training dataset is first sequenced into samples of length $\lambda$ and then split into input and target sequences each of length $\omega$. These input and target pairs are allocated into batches of size $\beta$ for training.
+    \item The RNN model is built using TensorFlow leveraging modules and routines from the high-level Keras API.
+    \begin{itemize}
+        \item The \textbf{embedding layer} is similar to Word2Vec embeddings used in language modelling - it projects the input context vector onto a dense, continuous, lower-dimensional vector space.
+        \item \textbf{GRUs (Gated Recurrent Units)} are used in the hidden layer and are activated with \textbf{sigmoid activation functions} and are initialized using \textbf{Xavier uniform initialization} (`\textit{glorot\_uniform}' in Keras). GRUs are employed in this design instead of the widely popular LSTMs because GRUs are structurally simpler and hence, take smaller training times. Furthermore, GRUs do not have a forget gate and therefore, they expose the entire memory during their operation without having to set any additional control variables. Xavier uniform initialization sets up the RNN cells with the samples drawn uniformly at random from $[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]$.
+        \item The design employs a \textbf{Hinton Dropout} layer for regularization (prevent over-fitting) so that the model generalizes well to unseen examples.
+        \item Finally, the output layer constitutes a fully-connected (\textbf{Dense}) NN-layer with neurons representing entries in the feature vocabulary.
+    \end{itemize}
+    \item The RNN model employs a `\textbf{sparse\_categorical\_crossentropy}' cost function with an \textbf{AdamOptimizer}. In this categorical classification problem encapsulating the time-series parameter estimation procedure, since the design incorporates a single mapped integer for each entry in the feature vocabulary instead of a one-hot encoding for the class labels and since the number of available class labels is huge, we employ a sparse (cross entropy evaluation performed over a subset of the predicted probabilities vs the true class labels), categorical (non-binary classification problem) cross-entropy (measure the dissimilarity between the predicted probabilities and the true class labels) cost function.
+    \item The designed model is then trained using the sequenced, split, and batched training dataset over many epochs.
+    \item To leverage the CUDA and/or Tensor core capabilities of NVIDIA GPUs, we use CuDNNGRUs in our hidden GRU layer for faster training.
+    \item After training the model, we use the most recent contextual samples of length $\omega$ to trigger the prediction process. During the course of the prediction process which estimates the feature values for a look-ahead horizon of $\Omega$, the context window is moved to the right with every iteration of the prediction loop. The predicted values are iteratively added to an output vector and to a context vector which is employed as a look-back window for predicting the feature value in the next time step. The output vector is passed on to the primary classification engine where the time-series estimates of other relevant features are used in tandem to predict the progression of the state of the link across the given look-ahead time horizon $\Omega$.
+\end{itemize}
+\end{document}
