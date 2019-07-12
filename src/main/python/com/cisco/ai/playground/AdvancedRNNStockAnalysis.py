@@ -220,7 +220,7 @@ class AdvancedRNNStockAnalysis(object):
             # ...because the AdamOptimizer uses the moving average of parameters and this facilitates...
             # ...faster convergence by settling on a larger effective step-size.
             optimizer = tensorflow.train.AdamOptimizer()
-            for epoch in range(0, self.NUMBER_OF_TRAINING_EPOCHS):
+            for epoch in range(self.NUMBER_OF_TRAINING_EPOCHS):
                 self.model.reset_states()
                 # Iterate through the training examples
                 for (batch_number, (training_context, target)) in enumerate(self.split_dataset):

@@ -36,22 +36,29 @@ class RNNStockAnalysisScrimmage(object):
     CLOSING_STOCK_PRICE_COLUMN_KEY = 'Closing_Stock_Price'
 
     # Batch size
+    # This seems to be the best mini_batch_size for injecting the appropriate amount of noise into the SGD process...
+    # ...in order to prevent it from settling down at a saddle point. Furthermore, we can better leverage the...
+    # ...parallel CUDA capabilities of the NVIDIA GPU if mini_batch_size > 32.
     BATCH_SIZE = 65
 
     # (1 - DROPOUT_RATE)
     # The keep probability for Hinton Dropout
-    KEEP_PROBABILITY = 0.7
+    # Dropout Factor = 0.1
+    # Two runs - one has a dropout factor of 0.9 and the other has a dropout factor of 0.8
+    KEEP_PROBABILITY = 0.8
 
     # The pragmatic limits of the stock price in USD
     PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
 
     # The length of the look-back context
-    # A lookback context length of 65 days (3 months = (4 + 4 + 5) weeks * 5 days per week = 65 days look-back)
-    LOOK_BACK_CONTEXT_LENGTH = 65
+    # A lookback context length of 65 days (3 months of look-back = (4 + 4 + 5) weeks * 5 days per week = 65 days)
+    # Two runs - one has a look-back of 65 days and the other has a look-back of 26 days
+    LOOK_BACK_CONTEXT_LENGTH = 26
 
     # The length of the look-ahead predictions = The length of the test data set
-    # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is one week
-    LOOK_AHEAD_SIZE = 5
+    # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is 10 days
+    # 2 weeks of look-ahead
+    LOOK_AHEAD_SIZE = 10
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
@@ -64,7 +71,7 @@ class RNNStockAnalysisScrimmage(object):
     NUMBER_OF_RNN_UNITS = 3900
 
     # Training data limit
-    TRAINING_DATA_LIMIT = 6500
+    TRAINING_DATA_LIMIT = 6955
 
     # Plotly Scatter mode
     PLOTLY_SCATTER_MODE = 'lines+markers'
@@ -124,11 +131,11 @@ class RNNStockAnalysisScrimmage(object):
         print('[INFO] RNNStockAnalysisScrimmage Initialization: Data Visualization Figure is available at {}'.format(
             initial_fig_url
         ))
-        # The data set for training - [0, 6500)
+        # The data set for training - [0, 6955)
         self.stock_prices_training = self.stock_prices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
         self.training_data = numpy.array([self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training])
-        # The data set for testing - [6500 6510)
+        # The data set for testing - [6955 6964]
         self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         self.stock_prices_testing = self.stock_prices.values[
                                     self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
@@ -197,7 +204,7 @@ class RNNStockAnalysisScrimmage(object):
             print('[ERROR] RNNStockAnalysisScrimmage predict: The operation failed due to previous errors!')
             return
         try:
-            modified_model.load_weights('./checkpoints/checkpoint_100')
+            modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1, None]))
             # The tail-end look-back context for the initial look-ahead prediction
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
@@ -221,7 +228,7 @@ class RNNStockAnalysisScrimmage(object):
                 # Move the context window to include the latest prediction and discount the oldest contextual element
                 cumulative_context = cumulative_context[1:]
         except Exception as e:
-            print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
+            print('[ERROR] RNNStockAnalysisScrimmage predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
             # traceback.print_tb(e.__traceback__)
         return predicted_prices

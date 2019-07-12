@@ -1,7 +1,5 @@
 # |Bleeding-Edge Productions|
 # This entity details a technique to provide an explanation for the predictions made by black-box deep-learning models.
-# Wiki Online [Editable]: https://www.overleaf.com/project/5d0577c5b1a0eb46c7ea9983
-# Wiki Offline [PDF]: latex/pdf/Correlation_And_Causation_Analysis_v1_0_0.pdf
 # Author: Bharath Keshavamurthy
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
@@ -74,7 +72,7 @@ class ProjectionGradientDescent(object):
         # The out-of-bounds point which needs to be constrained based on the equality and/or inequality constraints
         x, y = oob_point
         # Is the point outside the feasible set?
-        if (x < 0) or (y < 0) or ((x + y) > self.intercept_constraint):
+        if (abs(x) + abs(y)) > self.intercept_constraint:
             dot_product = ((x - x1) * (x2 - x1)) + ((y - y1) * (y2 - y1))
             norm_square = ((x2 - x1) * (x2 - x1)) + ((y2 - y1) * (y2 - y1))
             # Invalid base vector
@@ -84,10 +82,10 @@ class ProjectionGradientDescent(object):
             # Find the component of the operand vector along the base vector
             # This is a standard vector projection technique
             component = dot_product / norm_square
-            # (x1, y1) is the closest point
+            # (x1, y1) is the closest point - obtuse angle
             if component < 0:
                 return True, math.sqrt(((x - x1) * (x - x1)) + ((y - y1) * (y - y1))), (x1, y1)
-            # (x2, y2) is the closest point
+            # (x2, y2) is the closest point - acute angle, larger magnitude
             elif component > 1:
                 return True, math.sqrt(((x - x2) * (x - x2)) + ((y - y2) * (y - y2))), (x2, y2)
             # Find the closest point using the projection component
@@ -128,6 +126,7 @@ class ProjectionGradientDescent(object):
         if previous_point is not None and previous_point == current_point:
             x_projected_point, y_projected_point = self.projection(current_point)
             # Check if the projection of the point is the point itself
+            # Termination condition of PGD: [\theta^*]^{+} = \theta^*
             if (x_projected_point, y_projected_point) == current_point:
                 return True
         return False
@@ -136,7 +135,9 @@ class ProjectionGradientDescent(object):
     def optimize(self, _step_size):
         # Pick the step size
         step_size = (lambda: self.default_step_size,
-                     lambda: _step_size)[_step_size is not None]()
+                     lambda: _step_size)[_step_size is not None and
+                                         isinstance(_step_size, float) and
+                                         _step_size > 0.0]()
         previous_point = None
         # The convergence is theoretically guaranteed in finite time irrespective of the initialization
         # For a detailed proof, please refer to "Convex Optimization" by Boyd and Vandenberghe.
@@ -147,8 +148,10 @@ class ProjectionGradientDescent(object):
         # Enable confidence check for convergence
         # Make a standard convergence check for the projection operation [x]^{+} = x = x^{*}
         while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound) and (
-                self.convergence_check(previous_point, current_point) is False):
-            if self.convergence_check(previous_point, current_point):
+                self.convergence_check(previous_point,
+                                       current_point) is False):
+            if self.convergence_check(previous_point,
+                                      current_point):
                 # Increment confidence, if converged
                 confidence += 1
             previous_point = current_point
@@ -156,12 +159,13 @@ class ProjectionGradientDescent(object):
             self.iterations.append(iteration_count)
             self.function_values.append(self.rationale_engine.evaluate_loss(current_point))
             # The core: Projection Gradient Descent
-            gradient = self.rationale_engine.evaluate_gradients(current_point, self.dimensionality)
+            gradient = self.rationale_engine.evaluate_gradients(current_point,
+                                                                self.dimensionality)
             everything_is_okay, current_point = self.projection((current_point[0] - (step_size * gradient[0]),
                                                                  current_point[1] - (step_size * gradient[1])))
             # Propagating failure upward to the calling routine
             # TODO: Maybe, send a callback into the mess below and check its status upon its return;...
-            # ...It's much cleaner that way!
+            #  It's much cleaner that way!
             if everything_is_okay is False:
                 return False, None, None
             iteration_count += 1
@@ -210,17 +214,18 @@ class Utility(object):
     # Calculate the L1 norm of the given vector
     @staticmethod
     def l1_norm(vector):
-        return sum([abs(x) for x in vector])
+        return sum(abs(x) for x in vector)
 
     # A utility method
     # Calculate the L2 norm of the given vector
     @staticmethod
     def l2_norm(vector):
-        return math.sqrt(sum([x ** 2 for x in vector]))
+        return math.sqrt(sum(x ** 2 for x in vector))
 
     # A utility method
     # Calculate the exponential kernel coefficient
     def exponential_kernel_coefficient(self, _vector_x, _vector_z, _width):
+        # Dot Product using iterable comprehension
         dot_product = sum(i * j for i, j in zip(_vector_x, _vector_z))
         cosine_similarity = dot_product / (self.l2_norm(_vector_x) * self.l2_norm(_vector_z))
         return math.exp((cosine_similarity ** 2) / _width)
@@ -266,7 +271,7 @@ def deregister(_id):
     try:
         task = task_repository.pop(_id)
         print('[INFO] GlobalView de-register: Successfully removed task [{}: {}] '
-              'from the task repository'.format(_id, task.__class__))
+              'from the task repository'.format(_id, task.__name__))
     except KeyError:
         print('[ERROR] GlobalView de-register: The task ID [{}] does not exist in the task repository! Nothing to be '
               'done!'.format(_id))
@@ -293,7 +298,7 @@ class ClassificationTask(object):
     def evaluate_model(self):
         pass
 
-    # Abstract contract for making a prediction for a random sample from the test dataset
+    # Abstract contract for making a prediction for a specific sample from the test dataset
     def make_a_prediction(self):
         pass
 
@@ -330,10 +335,13 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             feature_index_map = (lambda: {u: i + 1 for i, u in enumerate(vocabulary)},
                                  lambda: {k: k for k in vocabulary})[isinstance(data, str) is False]()
             # Evaluate the mean and standard deviation of the integer mappings for normalization
-            mean = numpy.mean(feature_index_map.values())
-            standard_deviation = numpy.std(feature_index_map.values())
-            self.data_processor_memory[family] = feature_index_map, mean, standard_deviation
+            # Add the feature index map, the mean, and the standard deviation of the feature family to the...
+            # ...feature vocabulary dict
+            self.data_processor_memory[family] = (feature_index_map,
+                                                  numpy.mean(feature_index_map.values()),
+                                                  numpy.std(feature_index_map.values()))
         feature_index_map, mean, standard_deviation = self.data_processor_memory[family]
+        # Normalize the value according to the stats for that particular family and returned the normalized value
         return (feature_index_map[data] - mean) / standard_deviation
 
     # The initialization sequence
@@ -354,16 +362,18 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                                       'Housing', 'Loan', 'Contact', 'Day', 'Month',
                                       'Duration', 'Campaign', 'PayDays', 'Previous', 'Paid-Outcome', 'Class']
             # The call to the parent
-            ClassificationTask.__init__(self, self.TASK_ID, self.dataframe.columns)
+            ClassificationTask.__init__(self,
+                                        self.TASK_ID,
+                                        self.dataframe.columns)
             # The complete dataset
             features, labels = self.dataframe[self.dataframe.columns[:-1]], self.dataframe[self.dataframe.columns[-1]]
             # Processing the input features to make them compatible with the Classification Engine
             for feature_column in features.columns:
-                for i in range(0, len(features[feature_column])):
+                for i in range(len(features[feature_column])):
                     features[feature_column][i] = self.process_data(features[feature_column][i],
                                                                     feature_column)
             # Processing the output labels to make them compatible with the Classification Engine
-            for j in range(0, len(labels)):
+            for j in range(len(labels)):
                 # It is a contract between the calling entity and this engine that the columns in the dataset be...
                 # structured in the standard way, i.e. having all the features to the left of the label in the dataframe
                 labels[j] = self.process_data(labels[j], self.dataframe.columns[-1])
@@ -447,7 +457,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                         cost = tensorflow.keras.losses.sparse_categorical_crossentropy(training_example.label,
                                                                                        predicted_label)
                     gradients = gradient_tape.gradient(cost, self.model.trainable_variables)
-                    optimizer.apply_gradients(gradients, self.model.trainable_variables)
+                    optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
                 print('[DEBUG] NeuralNetworkClassificationEngine train_model: Epoch {} Cost {}'.format(epoch + 1, cost))
             # Model training is complete!
             return True
@@ -474,7 +484,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Make a prediction using the trained model for the given feature vector
     def make_a_prediction(self):
         # Choose a random sample from the test features collection
-        feature_vector = self.test_features.loc[[random.sample(range(len(self.test_labels)))]]
+        feature_vector = self.test_features.loc[[random.sample(range(len(self.test_labels)), 1)]]
         # Return the instance for analysis
         return feature_vector, self.model(feature_vector)
 
@@ -499,14 +509,16 @@ class PredictionRationaleEngine(object):
         # Instance definition
         # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{K}$ is the feature vector
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
-        self.instance = namedtuple('instance', ['features', 'label', 'weight'])
+        self.instance = namedtuple('instance',
+                                   ['features', 'label', 'weight'])
         # A named-tuple for individual models
-        self.model_results = namedtuple('model_results', ['features', 'loss', 'parameters'])
-        # The number of features to be included in the interpretable model
+        self.model_results = namedtuple('model_results',
+                                        ['features', 'loss', 'parameters'])
+        # The number of features to be included in the interpretable model = \kappa
         self.interpretable_features_count = self.dimensionality
-        # The number of perturbed instances sampled from the instance under analysis
+        # The number of perturbed instances sampled from the instance under analysis = N
         self.perturbed_samples_count = 1000
-        # The regularization constraint
+        # The regularization constraint = \alpha
         self.regularization_constraint = 10
         # The classifiers under prediction-rationale analysis
         self.classifiers_under_analysis = task_repository.values()
@@ -533,7 +545,8 @@ class PredictionRationaleEngine(object):
         if self.optimizer.status:
             # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
             for classifier_id, classifier in self.classifiers_under_analysis:
-                classifier_status = classifier.build_model() and classifier.train_model() and \
+                classifier_status = classifier.build_model() and \
+                                    classifier.train_model() and \
                                     classifier.evaluate_model()
                 # The classifier is setup correctly
                 if classifier_status:
@@ -542,10 +555,10 @@ class PredictionRationaleEngine(object):
                     explanation = self.get_interpretable_explanation(classifier)
                     if explanation is None:
                         print('[ERROR] PredictionRationaleEngine Explanation: Something went wrong while developing '
-                              'interpretation. Please refer to the earlier logs for more information '
+                              'the interpretation. Please refer to the earlier logs for more information '
                               'on what went wrong!')
                     print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
-                          'for the classifier [{}] is described by [{}].'.format(classifier.__class__,
+                          'for the classifier [{}] is described by [{}].'.format(classifier.__class__.__name__,
                                                                                  explanation.features))
                 print('[INFO] PredictionRationaleEngine Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
@@ -554,7 +567,7 @@ class PredictionRationaleEngine(object):
                   'Please refer to the earlier logs for more information on what went wrong!')
 
     # Get weights using the exponential family of kernels based on a cosine similarity distance metric
-    def get_weight(self, sample_instance, perturbed_instance):
+    def get_weights(self, sample_instance, perturbed_instance):
         return utility.exponential_kernel_coefficient(sample_instance.features,
                                                       perturbed_instance.features,
                                                       self.kernel_width)
@@ -567,9 +580,9 @@ class PredictionRationaleEngine(object):
         features, label = classifier.make_a_prediction()
         self.instance_under_analysis.features = features
         self.instance_under_analysis.label = label
-        # The dot product will be 1 -> cos 0 = 1 -> perfect cosine similarity -> Obviously!
-        self.instance_under_analysis.weight = self.get_weight(self.instance_under_analysis,
-                                                              self.instance_under_analysis)
+        # The dot product will be 1 -> cos 0 = 1 -> perfect cosine similarity (1) -> Obviously!
+        self.instance_under_analysis.weight = self.get_weights(self.instance_under_analysis,
+                                                               self.instance_under_analysis)
         print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample prediction instance under '
               'rationale analysis - Features = {} and Predicted Label = {}'.format(features,
                                                                                    label))
@@ -604,8 +617,8 @@ class PredictionRationaleEngine(object):
                 # The target
                 perturbed_sample.label = classifier.model(perturbed_sample.features)
                 # The weight
-                perturbed_sample.weight = self.get_weight(self.instance_under_analysis,
-                                                          perturbed_sample)
+                perturbed_sample.weight = self.get_weights(self.instance_under_analysis,
+                                                           perturbed_sample)
                 # Populate the baremetal sample with the label and the weight
                 baremetal_perturbed_sample.label = perturbed_sample.label
                 baremetal_perturbed_sample.weight = perturbed_sample.weight
@@ -638,10 +651,10 @@ class PredictionRationaleEngine(object):
                                       'currently supported. Please check back later!'.format(self.dimensionality))
         gradient = [k - k for k in range(len(parameter_vector))]
         for baremetal_perturbed_sample in self.baremetal_perturbed_samples_collection:
-            inner_term = (sum(
-                i * j for i, j in zip(
-                    parameter_vector, baremetal_perturbed_sample.features)) - baremetal_perturbed_sample.label) * \
-                         baremetal_perturbed_sample.features
+            inner_term = numpy.multiply(baremetal_perturbed_sample.features,
+                                        (sum(i * j for i, j in zip(parameter_vector,
+                                                                   baremetal_perturbed_sample.features)) -
+                                         baremetal_perturbed_sample.label))
             gradient = gradient + inner_term
         return (2 / self.perturbed_samples_count) * gradient
 
