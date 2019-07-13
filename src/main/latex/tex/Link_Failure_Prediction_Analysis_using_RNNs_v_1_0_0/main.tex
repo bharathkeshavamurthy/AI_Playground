@@ -66,7 +66,7 @@
     \item \textbf{Secondary Task}: Determine the progression of parameters essential for the primary task using time-series context-based estimation techniques
     \item In order to predict the failure of a link, we employ \textbf{Recurrent Neural Networks (RNNs)} to provide time-series estimates of the link parameters using historical context windows and use these look-ahead estimates to determine the progression of the state of the link.
     \item Additionally, the negative results of the primary prediction task are fed into the \textbf{Prediction Rationale Engine} (discussed in [\ref{1}]) in order to determine the root cause(s) for the link progressing into a ``Failed State".
-    \item The primary task involves a standard Neural Networks based classification engine. This will not be discussed in this document.
+    \item The primary task involves a standard Deep Neural Networks based classification engine. This will not be discussed in this document.
     \item The causation analysis engine (Prediction Rationale Engine) is discussed in detail in [\ref{1}].
     \item This document primarily deals with the design of the RNN-based time-series parameter estimation engine.
 \end{itemize}
@@ -82,7 +82,7 @@
         \item $\lambda$ denotes the length of the sample sequences before splitting them into input and target samples, i.e. $\lambda = \omega + 1$
         \item $\beta$ denotes the \textbf{batch size} for training
     \end{itemize}
-    \item The training dataset is first sequenced into samples of length $\lambda$ and then split into input and target sequences each of length $\omega$. These input and target pairs are allocated into batches of size $\beta$ for training.
+    \item The training dataset is first sequenced into samples of length $\lambda$ and then split into input and target sequences (the target is a right-shifted input with an additional ``look-ahead" at the tail of the sequence) each of length $\omega$. These input and target pairs are allocated into mini-batches of size $\beta$ for training.
     \item The RNN model is built using TensorFlow leveraging modules and routines from the high-level Keras API.
     \begin{itemize}
         \item The \textbf{embedding layer} is similar to Word2Vec embeddings used in language modelling - it projects the input context vector onto a dense, continuous, lower-dimensional vector space.

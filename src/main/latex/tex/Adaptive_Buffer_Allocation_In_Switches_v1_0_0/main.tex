@@ -107,7 +107,7 @@ The action space of the underlying MDP is modelled as,
         \mathcal{A} \equiv \{\vec{A} = [A,\ \Delta C_{global}]^\intercal\ |\ A = [a_{ij}]\}.
     \end{aligned}
 \end{equation}
-where, $a_{ij}$ corresponds to $\Delta m$ where, $\Delta m$ corresponds to a change (increment or decrement in the allocated buffer units) with respect to the queues corresponding to a port or the change (increment or decrement in the leftover buffer units) with respect to the dedicated local pool of a specific port. Furthermore, $\Delta C_{global}$ denotes the change (increment or decrement in the leftover buffer units) with respect to the global pool of the switch.
+where, $a_{ij}$ corresponds to $\Delta s$ where, $\Delta s$ corresponds to a change (increment or decrement in the allocated buffer units) with respect to the queues corresponding to a port or the change (increment or decrement in the leftover buffer units) with respect to the dedicated local pool of a specific port. Furthermore, $\Delta C_{global}$ denotes the change (increment or decrement in the leftover buffer units) with respect to the global pool of the switch.
 \subsection{The Observation Space}
 \begin{itemize}
     \item Within the context of the design of a switch, it does not make sense to consider partially observable (incomplete observations and/or noisy observations), hence, we will not approach this problem as a \textbf{Partially Observable Markov Decision Process (POMDP)} one.
@@ -158,35 +158,35 @@ where, $a_{ij}$ corresponds to $\Delta m$ where, $\Delta m$ corresponds to a cha
 \begin{itemize}
     \item The design employs an \textbf{Off-Policy Learning Algorithm}.
     \item \textbf{The Actor Network}'s output is modelled as $\mu(\vec{S}\ |\ \theta^{\xi}),\ \forall \vec{S} \in \mathcal{S}$ and the actor is responsible for determining the action policy to be followed by the RL agent.
-    \item \textbf{The Critic Network}'s output is modelled as $Q(\vec{S}\ |\ A, \theta^{Q}),\ \forall \vec{S} \in \mathcal{S}, \forall A \in \mathcal{A}$ and the critic is responsible for determining the "goodness" of the actor's action policy. The TD error from the critic drives the actor towards the most optimal action policy.
+    \item \textbf{The Critic Network}'s output is modelled as $Q(\vec{S}\ |\ \vec{A}, \theta^{Q}),\ \forall \vec{S} \in \mathcal{S}, \forall \vec{A} \in \mathcal{A}$ and the critic is responsible for determining the "goodness" of the actor's action policy. The TD error from the critic drives the actor towards the most optimal action policy.
     \item In an Asynchronous Actor-Critic setting, \textbf{multiple DQN workers} having their own set of network weights interact with their own copy of the switch environment. This not only speeds up the training of the overall Actor-Critic architecture, but also makes the training more diverse because each worker logs in a myriad of experiences with the switch environment.
     \item The design incorporates a \textbf{Prioritized Experience Replay Buffer} to remove correlations among training data samples while training the neural networks and thereby facilitating faster convergence. Instead of sampling random experiences from the replay memory, the design samples experiences according to two different sampling variants - \textit{TD-Error Prioritization} and \textit{Stochastic Prioritization} [\ref{3}]. We then compare the effort needed arrive at optimal solutions for the buffer allocation algorithm for these two experience sampling variants.
-    \item The TD target for the Critic in episode $t$ considering $\vec{S}_t \in \mathcal{S}\ \text{and}\ A_t \in \mathcal{A}$ is given by,
+    \item The TD target for the Critic in episode $t$ considering $\vec{S}_t \in \mathcal{S}\ \text{and}\ \vec{A}_t \in \mathcal{A}$ is given by,
     \begin{equation}
         \psi_{t} \triangleq r_t + \gamma Q(\vec{S}_{t+1}, \xi(\vec{S}_{t+1})\ |\ \theta^{Q}).
     \end{equation}
-    \item The loss function of the Critic is determined by sampling experiences in a batch $M \equiv \{(\vec{S}_{k}, A_{k}, r_{k}(\vec{S}_{k}, \vec{A}_{k}), \vec{S}'_{k}, \Gamma)\ |\ k \in \{0, 1, 2, \dots, |M| - 1\}\}$ and determining the mean-square error between the target and the prediction (\textbf{off-policy}) as shown below.
+    \item The loss function of the Critic is determined by sampling experiences in a batch $M \equiv \{(\vec{S}_{k}, \vec{A}_{k}, r_{k}(\vec{S}_{k}, \vec{A}_{k}), \vec{S}'_{k}, \Gamma)\ |\ k \in \{0, 1, 2, \dots, |M| - 1\}\}$ and determining the mean-square error between the target and the prediction (\textbf{off-policy}) as shown below.
     \begin{equation}
-        L(\theta^{Q}) \triangleq \frac{1}{N} \sum_{k=0}^{|M|-1}\ (\psi_k - Q(\vec{S}_{k}, \vec{A}_{k}\ |\ \theta^{Q}))^2
+        L(\theta^{Q}) \triangleq \frac{1}{M} \sum_{k=0}^{|M|-1}\ (\psi_k - Q(\vec{S}_{k}, \vec{A}_{k}\ |\ \theta^{Q}))^2
     \end{equation}
     Note that $\Gamma$ refers to a flag indicating whether the allocation process has reached a terminal state or not - a design consideration. Also, note that the model is completely agnostic to the transitions (including the transitions to the terminal state).
     \item The loss function of the Critic can be optimized using optimizers from TensorFlow (\textbf{AdamOptimizer} or \textbf{GradientDescentOptimizer}). The optimization update step considering a simple GradientDescentOptimizer is,
     \begin{equation}
-        \theta^{Q}_{n+1} = \theta^{Q}_{n} + \omega \triangledown L(\theta^{Q}_{n}).
+        \theta^{Q}_{n+1} = \theta^{Q}_{n} + \omega \triangledown L(\theta^{Q}_{n})
     \end{equation}
     where, $\omega$ represents the step-size which can be a fixed or a varying step-size, i.e. $\frac{1}{n}$. Note that $\omega$ is also known in AI literature as \textbf{the learning rate}.
-    \item The Actor Network is optimized using a \textbf{Deterministic Policy Gradient} technique wherein the update rule is obtained as shown below.
+    \item The Actor Network is optimized using a \textbf{Deep Deterministic Policy Gradient} technique wherein the update rule is obtained as shown below.
     \\The Bellman equation [\ref{4}] helps us determine the value of a state-action pair termed \textbf{Action-Value Function} corresponding to a given policy $\pi: \mathcal{S} \rightarrow \mathcal{A}$ as defined by,
     \begin{equation}\label{9a}
-        V^{\pi}(\vec{S}_t, \pi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma \mathbb{E}_{A_{t+1} = \pi(\vec{S}_{t+1})}\ \Big[ V^{\pi}(\vec{S}_{t+1}, A_{t+1})\Big]\Big].
+        V^{\pi}(\vec{S}_t, \pi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma \mathbb{E}_{\vec{A}_{t+1} = \pi(\vec{S}_{t+1})}\ \Big[ V^{\pi}(\vec{S}_{t+1}, \vec{A}_{t+1})\Big]\Big].
     \end{equation}
-    In Q-Learning which is an off-policy learning procedure, the target policy is a greedy one, i.e. $\xi(\vec{S}_{t+1}) = \argmax_{A \in \mathcal{A}}\ Q(\vec{S}_{t+1}, A)$, we can write equation \eqref{9a} as,
+    In Q-Learning which is an off-policy learning procedure, the target policy is a greedy one, i.e. $\xi(\vec{S}_{t+1}) = \argmax_{\vec{A} \in \mathcal{A}}\ Q(\vec{S}_{t+1}, \vec{A})$, we can write equation \eqref{9a} as,
     \begin{equation}\label{9b}
-        Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma Q^{\xi}(\vec{S}_{t+1}, \xi(\vec{S}_{t+1})\Big].
+        Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)) = \mathbb{E}_{\vec{S}_{t+1}, r_{t}}\ \Big[r_t + \gamma Q^{\xi}(\vec{S}_{t+1}, \xi(\vec{S}_{t+1}))\Big].
     \end{equation}
-    Taking the gradient in equation \eqref{9b} with respect to the Actor Network parameters $\theta^{\xi}$ and changing the expectation into an expectation over a separate behavior policy $\Xi$, we get,
+    Taking the gradient in equation \eqref{9b} with respect to the Actor Network parameters $\theta^{\xi}$ and changing the expectation into an expectation over a separate behavior policy $\Xi$, we get
     \begin{equation}\label{9c}
-        \triangledown_{\theta^{\xi}} \xi = \mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}}\Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_{t})\ |\ \theta^{Q})\Big)\Big].
+        \triangledown_{\theta^{\xi}} \xi = \mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}}\Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_{t})\ |\ \theta^{Q})\Big)\Big]
     \end{equation}
     where, $\theta^{Q}$ is incorporated because the design includes a Critic Network that determines the Q-value of state-action pairs estimating the ``goodness" of the pair.
     \\Furthermore, equation \eqref{9c} can be written as,
@@ -195,16 +195,17 @@ where, $a_{ij}$ corresponds to $\Delta m$ where, $\Delta m$ corresponds to a cha
     \end{equation}
     The optimization update step at the Actor is given by,
     \begin{equation}
-        \theta^{\xi}_{n+1} = \theta^{\xi}_{n} + \omega\Big(\triangledown_{\theta^{\xi}}\ \xi\Big).
+        \theta^{\xi}_{n+1} = \theta^{\xi}_{n} + \omega\Big(\triangledown_{\theta^{\xi}}\ \xi\Big)
     \end{equation}
+    which can be written as,
     \begin{equation}
-        \theta^{\xi}_{n+1} = \theta^{\xi}_{n} + \omega \Big\{\mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}} \Big(\xi(\vec{S}_t)\Big) \cdot \triangledown_{\xi(\vec{S}_t)} \Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)\ |\ \theta^{Q})\Big)\Big]\Big\}
+        \theta^{\xi}_{n+1} = \theta^{\xi}_{n} + \omega \Big\{\mathbb{E}_{\Xi}\ \Big[\triangledown_{\theta^{\xi}} \Big(\xi(\vec{S}_t)\Big) \cdot \triangledown_{\xi(\vec{S}_t)} \Big(Q^{\xi}(\vec{S}_t, \xi(\vec{S}_t)\ |\ \theta^{Q})\Big)\Big]\Big\}.
     \end{equation}
-    \item The DDPG A3C architecture is constructed in a standard \textbf{Double Deep-Q-Networks (DDQNs)} framework- one ANN is employed to estimate the Q-values for the state-action pairs while another ANN is employed to select the best action, given the state. The separation of the selection and estimation steps is done within the design in order to mitigate the over-estimation of Q-values which is found to occur in conventional DQNs [\ref{5}].
+    \item The DDPG A3C architecture is constructed in a standard \textbf{Double Deep-Q-Networks (DDQNs)} framework: one ANN is employed to estimate the Q-values for the state-action pairs, while another ANN is employed to select the best action, given the state. The separation of the selection and estimation steps is done within the design in order to mitigate the over-estimation of Q-values which is found to occur in conventional DQNs [\ref{5}].
     \item \textbf{Batch Normalization} layers are incorporated into the design of both the Actor and Critic Networks in order to ensure that each dimension across the samples in a batch have unit mean and variance which in turn mitigates the covariance shift during training and ensures that the subsequent layers receive whitened input data [\ref{4}].
-    \item As mentioned earlier, the design incorporates a separate network to determine the target value. The target network is updated using a soft update step as given by,
+    \item As mentioned earlier, the design incorporates a separate network to determine the target value. The target network is updated using a soft update step as given by
     \begin{equation}
-        \theta' \longleftarrow \tau \theta + (1 - \tau) \theta'.
+        \theta' \longleftarrow \tau \theta + (1 - \tau) \theta'
     \end{equation}
     where, $\tau << 1$ is the \textbf{target tracking coefficient}. This soft target update greatly stabilizes the learning process and mitigates divergence of the critic network's weights during training [\ref{4}].
     \item To allow for exploration within the design, we incorporate two exploration strategies:
@@ -217,22 +218,22 @@ where, $a_{ij}$ corresponds to $\Delta m$ where, $\Delta m$ corresponds to a cha
     \end{itemize}
     Given these two exploration strategies, performance evaluations are conducted to understand the best exploration policy in the given switch environment.
     \item \textbf{Generation of Ornstein-Uhlenbeck Noise}:
-    \\Vasicek Model of the Ornstein-Uhlenbeck Process-
-    \begin{equation}
+    \\Vasicek Model of the Ornstein-Uhlenbeck Process:
+    \begin{equation}\label{17}
         du_{t} = \phi(\nu - u_{t}) dt + \sigma dW_{t}
     \end{equation}
-    where, $\phi > 0,\ \sigma > 0$, and $W_u$ represents a Brownian Motion process.
+    where, $\nu$ is a constant, $\phi > 0,\ \sigma > 0$, and $W_u$ represents a Brownian Motion process.
+    \\Rewriting equation \eqref{17}, we get
     \begin{equation}\label{18}
-        u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma dW_{t}
+        u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma dW_{t}.
     \end{equation}
-    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has \textbf{independent increments}: $W_{p+q} - W_{p},\ p > 0\ and\ q \geq 0$ is independent of $W_{m},\ m < t$ and \textbf{Gaussian increments}: $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$.
-    \\Mathematically,
+    Note that the Wiener process, i.e. the Brownian Motion process $W_t$ has \textbf{independent increments}: $W_{p+q} - W_{p},\ p > 0\ \text{and}\ q \geq 0$ is independent of $W_{m},\ m < t$ and \textbf{Gaussian increments}: $(W_{p+q} - W_p) \sim \mathcal{N}(0, q)$ which can be written mathematically as,
     \begin{equation}\label{19}
-        dW_{t} \sim \mathcal{N}(0, dt) = \sqrt{dt} \mathcal{N}(0, 1)
+        dW_{t} \sim \mathcal{N}(0, dt) = \sqrt{dt} \mathcal{N}(0, 1).
     \end{equation}
     Using equation \eqref{19} in equation \eqref{18},
     \begin{equation}
-        u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma(\sqrt{dt} \mathcal{N}(0, 1))
+        u_{t+\delta} = u_{t} + \phi(\nu - u_{t}) dt + \sigma(\sqrt{dt} \mathcal{N}(0, 1)).
     \end{equation}
 \end{itemize}
 \end{document}
