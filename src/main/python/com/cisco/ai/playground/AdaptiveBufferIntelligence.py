@@ -925,7 +925,7 @@ class Apollo(object):
         # State and Action validation check
         if self.state_dimension is None or self.action_dimension is None:
             print('[ERROR] Apollo Initialization: Something went wrong while obtaining the state and compliant action '
-                  'information from Nexus. Please refer to the previous logs for more details on this error.')
+                  'information from Nexus. Please refer to the earlier logs for more details on this error.')
             self.status = Status.FAILURE
         # Create the Actor and Critic Networks
         self.actor = Actor(self.state_dimension,
@@ -1156,7 +1156,7 @@ if __name__ == '__main__':
     action_dimension = nexus.get_action_dimension()
     if action_dimension is None:
         print('[ERROR] AdaptiveBufferIntelligence Trigger: Something went wrong while obtaining the action dimension'
-              'from Nexus. Please refer to the previous logs for more details on this error. Exiting!')
+              'from Nexus. Please refer to the earlier logs for more details on this error. Exiting!')
         raise SystemExit
     environment_details = ENVIRONMENT_DETAILS(number_of_ports=number_of_ports,
                                               number_of_queues_per_port=number_of_queues_per_port,
@@ -1206,7 +1206,7 @@ if __name__ == '__main__':
                     maximum_number_of_episodes)
     if apollo.status == Status.FAILURE:
         print('[ERROR] AdaptiveBufferIntelligence Trigger: Something went wrong during the initialization of Apollo. '
-              'Please refer to the previous logs for more information on this error.')
+              'Please refer to the earlier logs for more information on this error.')
         raise SystemExit
     ares = Ares(nexus)
     # The timer interval for Cronus controlling Ares - fix this to 1.0

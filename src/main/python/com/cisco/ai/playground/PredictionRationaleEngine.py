@@ -67,6 +67,8 @@ class ProjectionGradientDescent(object):
         self.function_values = []
         # The confidence bound for convergence
         self.confidence_bound = 10
+        # The number of digits post the decimal point to be considered for convergence analysis
+        self.convergence_significance = 8  # modelled from significant digits of a number
         # The maximum number of iterations allowed during training
         self.max_iterations = 1e4
         # The rationaleEngine for loss function and gradient evaluation
@@ -114,7 +116,8 @@ class ProjectionGradientDescent(object):
         vector_projection_output_tuples_collection = []
         # A namedtuple for cleaner storage
         vector_projection_output_tuple = namedtuple('output_tuple',
-                                                    ['distance', 'closest_point'])
+                                                    ['distance',
+                                                     'closest_point'])
         for line_segment in self.line_segments:
             # Perform vector projection of the operand vector (oob_point) with respect to the current line_segment
             status_flag, distance, closest_point = self.vector_projection(oob_point,
@@ -133,12 +136,30 @@ class ProjectionGradientDescent(object):
 
     # The convergence check for the Projection Gradient Descent algorithm
     def convergence_check(self, previous_point, current_point):
-        if previous_point is not None and previous_point == current_point:
-            x_projected_point, y_projected_point = self.projection(current_point)
-            # Check if the projection of the point is the point itself
-            # Termination condition of PGD: [\theta^*]^{+} = \theta^*
-            if (x_projected_point, y_projected_point) == current_point:
-                return True
+        if previous_point is not None and \
+                (numpy.round(previous_point[0],
+                             self.convergence_significance),
+                 numpy.round(previous_point[1],
+                             self.convergence_significance)) == (numpy.round(current_point[0],
+                                                                             self.convergence_significance),
+                                                                 numpy.round(current_point[1],
+                                                                             self.convergence_significance)):
+            status, (x_projected_point, y_projected_point) = self.projection(current_point)
+            if status:
+                # Check if the projection of the point is the point itself
+                # Termination condition of PGD: [\theta^*]^{+} = \theta^*
+                # Again, this is a 2-dimensional PGD routine - this is not valid for PGDs of different dimensionalities
+                if (numpy.round(x_projected_point,
+                                self.convergence_significance),
+                    numpy.round(y_projected_point,
+                                self.convergence_significance)) == (numpy.round(current_point[0],
+                                                                                self.convergence_significance),
+                                                                    numpy.round(current_point[1],
+                                                                                self.convergence_significance)):
+                    return True
+            else:
+                print('[WARN] ProjectionGradientDescent convergence_check: Something went wrong during the convergence '
+                      'check operation. Please refer to the earlier logs for more information on this error.')
         return False
 
     # The main optimization routine
@@ -180,7 +201,8 @@ class ProjectionGradientDescent(object):
                 return False, None, None
             iteration_count += 1
         # After convergence, visualize the progression of the cost function
-        self.visualize()
+        # TODO: Do I need the visualization of the optimization process?
+        # self.visualize()
         # Return the converged loss (function value) and the converged parameters of the regression model
         return True, self.function_values[-1], current_point
 
@@ -640,6 +662,8 @@ class PredictionRationaleEngine(object):
     # The initialization sequence
     def __init__(self):
         print('[INFO] PredictionRationaleEngine Initialization: Bringing things up...')
+        # The status of this engine
+        self.status = False
         # The dimensionality of the locally interpretable model used in the rationale engine
         self.dimensionality = SUPPORTED_DIMENSIONALITY
         # The width parameter of the exponential kernel function
@@ -649,10 +673,14 @@ class PredictionRationaleEngine(object):
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
         # RecordClasses are mutable alternatives to namedtuples
         self.instance = recordclass('instance',
-                                    ['features', 'label', 'weight'])
+                                    ['features',
+                                     'label',
+                                     'weight'])
         # A named-tuple for individual models
         self.model_results = namedtuple('model_results',
-                                        ['features', 'loss', 'parameters'])
+                                        ['features',
+                                         'loss',
+                                         'parameters'])
         # The number of features to be included in the interpretable model = \kappa
         self.interpretable_features_count = self.dimensionality
         # The number of perturbed instances sampled from the instance under analysis = N
@@ -704,6 +732,10 @@ class PredictionRationaleEngine(object):
                                                                                  explanation.features))
                 print('[INFO] PredictionRationaleEngine Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
+            self.status = True
+            print('[INFO] PredictionRationaleEngine Initialization: '
+                  'All registered classifiers have been tagged and their prediction rationales have been explained. '
+                  'Final status: [{}]'.format(self.status))
         else:
             print('[ERROR] PredictionRationaleEngine Initialization: Failure during initialization. '
                   'Please refer to the earlier logs for more information on what went wrong!')
@@ -725,21 +757,24 @@ class PredictionRationaleEngine(object):
         # The dot product will be 1 -> cos 0 = 1 -> perfect cosine similarity (1) -> Obviously!
         self.instance_under_analysis.weight = self.get_weights(self.instance_under_analysis,
                                                                self.instance_under_analysis)
-        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample non-normalized prediction '
+        # It is a contract between the data processing entity and this engine that the columns in the dataset be...
+        # structured in the standard way, i.e. having all the features to the left of the label in the dataframe
+        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample '
               'instance under rationale analysis - '
-              'Features = \n{} and '
-              '\nPredicted Label = {}'.format(tabulate(classifier.dataframe.loc[[sample_index]],
-                                                       headers='keys',
-                                                       tablefmt='psql'
-                                                       ),
-                                              (lambda: 'no',
-                                               # Conversion to a list is done to avoid the numpy.bool DeprecationWarning
-                                               lambda: 'yes')[label.tolist()[0][0] > 0.5]()
-                                              )
+              '\nFeatures = \n{} and '
+              '\nTrue Label = {}'.format(tabulate(classifier.dataframe.loc[[sample_index]][
+                                                      [k for k in classifier.dataframe.columns[:-1]]],
+                                                  headers='keys',
+                                                  tablefmt='psql'
+                                                  ),
+                                         classifier.dataframe.loc[[sample_index]][
+                                             [classifier.dataframe.columns[-1]]].values[0,
+                                                                                        0]
+                                         )
               )
         print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample normalized prediction instance '
               'under rationale analysis - '
-              'Features = \n{} and '
+              '\nFeatures = \n{} and '
               '\nPredicted Label = {}'.format(tabulate(features,
                                                        headers='keys',
                                                        tablefmt='psql'),
@@ -755,7 +790,16 @@ class PredictionRationaleEngine(object):
                                                                                       )]
         # A collection to house the loss and parameters of each individual local fit
         model_results_collection = []
+        model_analysis_counter = 0.0
         for feature_family_tuple in all_possible_feature_family_combinations:
+            utility.sys_progress(model_analysis_counter,
+                                 len(all_possible_feature_family_combinations),
+                                 bar_length=20,
+                                 log_level='DEBUG',
+                                 entity=self.__class__.__name__,
+                                 routine='get_interpretable_explanation',
+                                 key='Analyzing locally interpretable linear models: '
+                                     'Starting model analysis for {}'.format(feature_family_tuple))
             # Purge the collection after analysis
             self.baremetal_perturbed_samples_collection.clear()
             # Creating <#perturbed_instances> perturbed samples for vicinity-based model fitting
@@ -774,7 +818,8 @@ class PredictionRationaleEngine(object):
                     # Standard Normalization technique 1 - Sample from the vocabulary
                     # Standard Normalization technique 2 - Subtract the family mean from the value
                     # Standard Normalization technique 3 - Divide by the standard deviation of the family
-                    perturbed_value = (((random.sample(list(family_values.values()), 1)[0]) - family_mean) / family_std)
+                    perturbed_value = (((random.sample(list(family_values.values()),
+                                                       1)[0]) - family_mean) / family_std)
                     perturbed_sample.features[feature_family] = perturbed_value
                     baremetal_perturbed_sample.features.append(perturbed_value)
                 # The target
@@ -798,6 +843,19 @@ class PredictionRationaleEngine(object):
             model_results_collection.append(self.model_results(features=feature_family_tuple,
                                                                loss=model_output[1],
                                                                parameters=model_output[2]))
+            model_analysis_counter += 1.0
+            utility.sys_progress(model_analysis_counter,
+                                 len(all_possible_feature_family_combinations),
+                                 bar_length=20,
+                                 log_level='DEBUG',
+                                 entity=self.__class__.__name__,
+                                 routine='get_interpretable_explanation',
+                                 key='Analyzing locally interpretable linear models: '
+                                     'Completed model analysis for {}'.format(feature_family_tuple))
+        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: '
+              'Completed locally interpretable linear model analyses for all possible '
+              'feature family tuples of length {}. '
+              'Finding the best explanation among these analyzed models...'.format(self.interpretable_features_count))
         best_model = min(model_results_collection, key=lambda x: x.loss)
         return best_model
 
@@ -835,8 +893,19 @@ if __name__ == '__main__':
     print('[INFO] PredictionRationaleEngine Trigger: Starting system assessment!')
     # This is one example of a classification engine suitable for use in this environment
     nnClassifier = NeuralNetworkClassificationEngine()
+    # NeuralNetworkClassificationEngine SUCCESS
     if nnClassifier.status:
+        # Analyze the rationale behind the predictions made by this engine
         rationaleEngine = PredictionRationaleEngine()
+        # PredictionRationaleEngine SUCCESS
+        if rationaleEngine.status:
+            print('[INFO] PredictionRationaleEngine Trigger: Prediction Rationale Analysis is Successful!')
+        # PredictionRationaleEngine FAILURE
+        else:
+            print('ERROR] PredictionRationaleEngine Trigger: Prediction Rationale Analysis Failed! '
+                  'Something went wrong during the initialization of {}'.format(PredictionRationaleEngine.__name__))
+        print('[INFO] PredictionRationaleEngine Trigger: System assessment has been completed!')
+    # NeuralNetworkClassificationEngine FAILURE
     else:
         print('[ERROR] PredictionRationaleEngine Trigger: Something went wrong during the initialization '
               'of {}'.format(NeuralNetworkClassificationEngine.__name__))
