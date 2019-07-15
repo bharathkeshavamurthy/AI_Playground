@@ -53,7 +53,7 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (0, 1)
+        self.initial_weights = (10.4, -48.1)
         # The intercept constraint in the given linear inequality constraint, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -66,11 +66,11 @@ class ProjectionGradientDescent(object):
         # The function values array which models the y-axis of the convergence plot
         self.function_values = []
         # The confidence bound for convergence
-        self.confidence_bound = 10
+        self.confidence_bound = 100
         # The number of digits post the decimal point to be considered for convergence analysis
-        self.convergence_significance = 8  # modelled from significant digits of a number
+        self.convergence_significance = 10  # modelled from significant digits of a number
         # The maximum number of iterations allowed during training
-        self.max_iterations = 1e4
+        self.max_iterations = 1e6
         # The rationaleEngine for loss function and gradient evaluation
         self.rationale_engine = _rationale_engine
         # The initialization has been completed successfully
@@ -410,16 +410,16 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     TRAINING_SPLIT = 0.8
 
     # The number of neurons in the input layer of the NN model
-    NUMBER_OF_INPUT_UNITS = 512
+    NUMBER_OF_INPUT_UNITS = 1024
 
     # The number of neurons in the hidden layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS = 1024
+    NUMBER_OF_HIDDEN_UNITS = 2048
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
     BATCH_SIZE = 50
 
     # The number of epochs to train the model
-    NUMBER_OF_TRAINING_EPOCHS = 10
+    NUMBER_OF_TRAINING_EPOCHS = 5000
 
     # Process the data before feeding it into the Classifier
     def process_data(self, data, family):
@@ -684,9 +684,9 @@ class PredictionRationaleEngine(object):
         # The number of features to be included in the interpretable model = \kappa
         self.interpretable_features_count = self.dimensionality
         # The number of perturbed instances sampled from the instance under analysis = N
-        self.perturbed_samples_count = 1000
+        self.perturbed_samples_count = 10000
         # The regularization constraint = \alpha
-        self.regularization_constraint = 10
+        self.regularization_constraint = 100
         # The <classifier_id, classifier> pairs under prediction-rationale analysis
         self.classifiers_under_analysis = task_repository.items()
         # A collection for successfully built, compiled, and trained classifiers
