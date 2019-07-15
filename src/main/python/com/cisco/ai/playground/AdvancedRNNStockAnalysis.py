@@ -8,6 +8,8 @@
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
+# TODO: A logging framework instead of all these formatted print statements...
+
 # The imports
 import os
 import numpy

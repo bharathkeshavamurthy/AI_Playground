@@ -7,6 +7,8 @@
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
+# TODO: A logging framework instead of all these formatted print statements...
+
 # The imports
 import numpy
 import plotly
@@ -43,17 +45,15 @@ class RNNStockAnalysisScrimmage(object):
 
     # (1 - DROPOUT_RATE)
     # The keep probability for Hinton Dropout
-    # Dropout Factor = 0.1
-    # Two runs - one has a dropout factor of 0.9 and the other has a dropout factor of 0.8
-    KEEP_PROBABILITY = 0.8
+    # Dropout Factor = 0.2
+    # KEEP_PROBABILITY = 0.8
 
     # The pragmatic limits of the stock price in USD
     PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
 
     # The length of the look-back context
     # A lookback context length of 65 days (3 months of look-back = (4 + 4 + 5) weeks * 5 days per week = 65 days)
-    # Two runs - one has a look-back of 65 days and the other has a look-back of 26 days
-    LOOK_BACK_CONTEXT_LENGTH = 26
+    LOOK_BACK_CONTEXT_LENGTH = 65
 
     # The length of the look-ahead predictions = The length of the test data set
     # A reasonable look-ahead size given the quality of the dataset (uni-variate - historical stock prices) is 10 days
@@ -68,7 +68,7 @@ class RNNStockAnalysisScrimmage(object):
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 3900
+    NUMBER_OF_RNN_UNITS = 5200
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6955
@@ -174,7 +174,7 @@ class RNNStockAnalysisScrimmage(object):
                            recurrent_initializer='glorot_uniform',
                            stateful=True),
                 # The Hinton dropout layer
-                tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
+                # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
                 # The fully connected neural network
                 # A classification-type output onto the vocabulary
                 tensorflow.keras.layers.Dense(len(self.available_vocabulary))

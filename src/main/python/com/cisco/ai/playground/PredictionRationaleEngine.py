@@ -4,7 +4,10 @@
 # Organization: CISCO Systems, Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
+# TODO: A logging framework instead of all these formatted print statements...
+
 # The imports
+import sys
 import math
 import numpy
 import plotly
@@ -12,9 +15,16 @@ import pandas
 import random
 import itertools
 import traceback
+# import threading
 import tensorflow
+# import progressbar
 from tabulate import tabulate
+from recordclass import recordclass
 from collections import namedtuple
+
+# Get rid of the false positive pandas "SettingWithCopyWarning" message
+# There's no chaining happening
+pandas.options.mode.chained_assignment = None
 
 # Plotly user account credentials for visualization
 plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPiEW5S')
@@ -43,11 +53,11 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (0, 0)
+        self.initial_weights = (0, 1)
         # The intercept constraint in the given linear inequality constraint, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
-        self.default_step_size = 0.001
+        self.default_step_size = 0.01
         # Two-dimensional Projection Gradient Descent
         # The line segments of the polyhedron which comprises the feasible set
         self.line_segments = _line_segments
@@ -58,7 +68,7 @@ class ProjectionGradientDescent(object):
         # The confidence bound for convergence
         self.confidence_bound = 10
         # The maximum number of iterations allowed during training
-        self.max_iterations = 1e6
+        self.max_iterations = 1e4
         # The rationaleEngine for loss function and gradient evaluation
         self.rationale_engine = _rationale_engine
         # The initialization has been completed successfully
@@ -226,9 +236,28 @@ class Utility(object):
     # Calculate the exponential kernel coefficient
     def exponential_kernel_coefficient(self, _vector_x, _vector_z, _width):
         # Dot Product using iterable comprehension
-        dot_product = sum(i * j for i, j in zip(_vector_x, _vector_z))
-        cosine_similarity = dot_product / (self.l2_norm(_vector_x) * self.l2_norm(_vector_z))
+        vector_x = _vector_x.values[0]
+        vector_z = _vector_z.values[0]
+        dot_product = sum(i * j for i, j in zip(vector_x, vector_z))
+        # Cosine similarity evaluation and the subsequent exponential kernel value calculation
+        cosine_similarity = dot_product / (self.l2_norm(vector_x) * self.l2_norm(vector_z))
         return math.exp((cosine_similarity ** 2) / _width)
+
+    # A utility method
+    # Visualize the progress using the sys.stdout.write() and sys.stdout.flush() routines
+    # The current_value OR end_value args should be 'float'
+    @staticmethod
+    def sys_progress(current_value, end_value, bar_length=100, log_level='TRACE',
+                     entity='', routine='', key='Progress'):
+        arrow_position = '-' * int(((current_value / end_value) * bar_length) - 1) + '>'
+        empty_spaces = ' ' * int((bar_length - len(arrow_position)))
+        sys.stdout.write('\r[{}] {} {}: {} - [{}] {}%'.format(log_level,
+                                                              entity,
+                                                              routine,
+                                                              key,
+                                                              arrow_position + empty_spaces,
+                                                              numpy.round((current_value / end_value) * 100, 2)))
+        sys.stdout.flush()
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -308,6 +337,45 @@ class ClassificationTask(object):
         deregister(_id)
 
 
+# Pre-Processing semaphore
+# proc_semaphore = threading.Lock()
+
+
+# The concurrency process controller
+# def proc_control(classification_engine, feature_name, internal_proc_counter=0.0):
+#     # A temporary processed data storage
+#     proc_control_array = []
+#     # A progress bar instance for progress visualization
+#     # progress_bar = progressbar.ProgressBar(maxval=len(self.features[feature_name]),
+#     #                                        widgets=[progressbar.Bar('-',
+#     #                                                                 '[',
+#     #                                                                 ']'),
+#     #                                                 progressbar.Percentage()])
+#     # progress_bar.start()
+#     # Internal feature data pre-processing loop
+#     for i in range(len(classification_engine.features[feature_name])):
+#         # Progress visualization [progressbar]
+#         # progress_bar.update(internal_proc_counter)
+#         # Progress visualization [sys]
+#         utility.sys_progress(internal_proc_counter,
+#                              len(classification_engine.features[feature_name]),
+#                              bar_length=20,
+#                              log_level='DEBUG',
+#                              entity=classification_engine.__class__.__name__,
+#                              routine='Initialization',
+#                              key='Pre-Processing Progress for {}'.format(feature_name))
+#         internal_proc_counter += 1.0
+#         proc_control_array.append(classification_engine.process_data(classification_engine.features[feature_name][i],
+#                                                                      feature_name))
+#     # progress_bar.finish()
+#     proc_control_series = pandas.Series(proc_control_array)
+#     # Acquire the proc_semaphore before accessing the global dataframe
+#     proc_semaphore.acquire()
+#     classification_engine.features[feature_name] = proc_control_series
+#     # Release the proc_semaphore after accessing the global dataframe
+#     proc_semaphore.release()
+
+
 # This class employs a fully-connected neural network to perform the classification task.
 class NeuralNetworkClassificationEngine(ClassificationTask):
     # The task id
@@ -319,30 +387,39 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Use ${TRAINING_SPLIT} * 100% of the data for training and the remaining for testing and/or validation
     TRAINING_SPLIT = 0.8
 
+    # The number of neurons in the input layer of the NN model
+    NUMBER_OF_INPUT_UNITS = 512
+
     # The number of neurons in the hidden layer of the NN model
     NUMBER_OF_HIDDEN_UNITS = 1024
 
+    # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
+    BATCH_SIZE = 50
+
     # The number of epochs to train the model
-    NUMBER_OF_TRAINING_EPOCHS = 5000
+    NUMBER_OF_TRAINING_EPOCHS = 10
 
     # Process the data before feeding it into the Classifier
     def process_data(self, data, family):
-        # Vocabulary Creation
-        vocabulary = sorted(set(self.dataframe[family]))
-        self.feature_vocabulary_mapping[family] = vocabulary
+        # Strip the trailing whitespaces from examples of all string features
+        data = (lambda: data.strip(),
+                lambda: data)[isinstance(data, str) is False]()
         if family not in self.data_processor_memory.keys():
+            # Vocabulary Creation
+            vocabulary = sorted(set(self.dataframe[family]))
+            self.feature_vocabulary_mapping[family] = vocabulary
             # A word to integer mapping for categorical columns
-            feature_index_map = (lambda: {u: i + 1 for i, u in enumerate(vocabulary)},
+            feature_index_map = (lambda: {u.strip(): i + 1 for i, u in enumerate(vocabulary)},
                                  lambda: {k: k for k in vocabulary})[isinstance(data, str) is False]()
             # Evaluate the mean and standard deviation of the integer mappings for normalization
             # Add the feature index map, the mean, and the standard deviation of the feature family to the...
             # ...feature vocabulary dict
             self.data_processor_memory[family] = (feature_index_map,
-                                                  numpy.mean(feature_index_map.values()),
-                                                  numpy.std(feature_index_map.values()))
+                                                  numpy.mean(list(feature_index_map.values())),
+                                                  numpy.std(list(feature_index_map.values())))
         feature_index_map, mean, standard_deviation = self.data_processor_memory[family]
         # Normalize the value according to the stats for that particular family and returned the normalized value
-        return (feature_index_map[data] - mean) / standard_deviation
+        return float(feature_index_map[data] - mean) / standard_deviation
 
     # The initialization sequence
     def __init__(self):
@@ -366,17 +443,58 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                                         self.TASK_ID,
                                         self.dataframe.columns)
             # The complete dataset
-            features, labels = self.dataframe[self.dataframe.columns[:-1]], self.dataframe[self.dataframe.columns[-1]]
+            features, labels = self.dataframe[self.dataframe.columns[:-1]], self.dataframe[
+                self.dataframe.columns[-1]]
+
+            # Concurrency Collection: Pre-Processing all the feature families concurrently
+            # proc_threads = []
+            # Processing the input features to make them compatible with the Classification Engine
+            # for feature_column in self.features.columns:
+            #     proc_thread = threading.Thread(target=proc_control, args=(self,
+            #                                                               feature_column,
+            #                                                               0.0))
+            #     proc_threads.append(proc_thread)
+            #     proc_thread.start()
+            # # Wait for completion and join the proc threads back to the main thread
+            # for thread in proc_threads:
+            #     thread.join()
+
             # Processing the input features to make them compatible with the Classification Engine
             for feature_column in features.columns:
+                # Change the data-type of this column [dtype = numpy.int64] for normalization
+                if isinstance(features[feature_column][0], numpy.int64):
+                    features[feature_column] = features[feature_column].astype(numpy.float)
+                internal_proc_counter = 0.0
                 for i in range(len(features[feature_column])):
+                    internal_proc_counter += 1.0
                     features[feature_column][i] = self.process_data(features[feature_column][i],
                                                                     feature_column)
+                    utility.sys_progress(internal_proc_counter,
+                                         len(features[feature_column]),
+                                         bar_length=20,
+                                         log_level='DEBUG',
+                                         entity=self.__class__.__name__,
+                                         routine='Initialization',
+                                         key='Pre-Processing Progress for {}'.format(feature_column))
             # Processing the output labels to make them compatible with the Classification Engine
+            # internal_proc_counter = 0.0
             for j in range(len(labels)):
                 # It is a contract between the calling entity and this engine that the columns in the dataset be...
                 # structured in the standard way, i.e. having all the features to the left of the label in the dataframe
-                labels[j] = self.process_data(labels[j], self.dataframe.columns[-1])
+                # TODO: Unnecessary processing - Do I need this?
+                # internal_proc_counter += 1.0
+                # labels[j] = self.process_data(labels[j], self.dataframe.columns[-1])
+                # utility.sys_progress(internal_proc_counter,
+                #                      len(labels),
+                #                      bar_length=20,
+                #                      log_level='DEBUG',
+                #                      entity=self.__class__.__name__,
+                #                      routine='Initialization',
+                #                      key='Pre-Processing Progress for {}'.format(self.dataframe.columns[-1]))
+
+                # A simple conditional within an outer example iterator
+                labels[j] = (lambda: 0,
+                             lambda: 1)[labels[j].strip() == 'yes']()
             split = math.floor(len(features) * self.TRAINING_SPLIT)
             # The training data
             self.training_features, self.training_labels = features[:split], labels[:split]
@@ -389,7 +507,8 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             self.test_features, self.test_labels = features[split:], labels[split:]
             self.test_labels = [k for k in self.test_labels]
             self.test_data = []
-            for k in range(len(self.test_features)):
+            for k in range(len(self.training_features),
+                           len(self.test_features)):
                 self.test_data.append(self.DATA(features=self.test_features.loc[[k]],
                                                 label=self.test_labels[k]))
             # The model
@@ -401,7 +520,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             self.number_of_features = len(self.dataframe.columns) - 1
             self.number_of_training_examples = len(self.training_labels)
             self.number_of_test_examples = len(self.test_labels)
-            print('[INFO] NeuralNetworkClassificationEngine Initialization: The dataset is - \n{}'.format(
+            print('\n[INFO] NeuralNetworkClassificationEngine Initialization: The dataset is - \n{}'.format(
                 tabulate(self.dataframe,
                          headers='keys',
                          tablefmt='psql')
@@ -424,7 +543,8 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             # Construct a standard NN model with one hidden layer and ReLU & sigmoid non-linearities
             self.model = tensorflow.keras.Sequential([
                 # The input layer
-                tensorflow.keras.layers.Dense(units=len(self.dataframe.columns) - 1,
+                tensorflow.keras.layers.Dense(units=self.NUMBER_OF_INPUT_UNITS,
+                                              input_shape=(len(self.dataframe.columns) - 1,),
                                               activation=tensorflow.nn.relu),
                 # The hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS,
@@ -449,17 +569,32 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             # I use an AdamOptimizer in the place of the simpler tensorflow.train.GradientDescentOptimizer()...
             # ...because the AdamOptimizer uses the moving average of parameters and this facilitates...
             # ...faster convergence by settling on a larger effective step-size.
-            optimizer = tensorflow.train.AdamOptimizer()
-            for epoch in range(self.NUMBER_OF_TRAINING_EPOCHS):
-                for training_example in self.training_data:
-                    with tensorflow.GradientTape() as gradient_tape:
-                        predicted_label = self.model(training_example.features)
-                        cost = tensorflow.keras.losses.sparse_categorical_crossentropy(training_example.label,
-                                                                                       predicted_label)
-                    gradients = gradient_tape.gradient(cost, self.model.trainable_variables)
-                    optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
-                print('[DEBUG] NeuralNetworkClassificationEngine train_model: Epoch {} Cost {}'.format(epoch + 1, cost))
-            # Model training is complete!
+
+            # Advanced Customized Training
+            # optimizer = tensorflow.train.AdamOptimizer()
+            # for epoch in range(self.NUMBER_OF_TRAINING_EPOCHS):
+            #     for training_example in self.training_data:
+            #         with tensorflow.GradientTape() as gradient_tape:
+            #             predicted_label = self.model.predict(training_example.features)[0]
+            #             cost = tensorflow.keras.losses.sparse_categorical_crossentropy(training_example.label,
+            #                                                                            predicted_la   bel)
+            #         gradients = gradient_tape.gradient(cost, self.model.trainable_variables)
+            #         optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
+            #     print('[DEBUG] NeuralNetworkClassificationEngine train_model: Epoch {} Cost {}'.format(epoch + 1,
+            #                                                                                            cost))
+            # # Model training is complete!
+            # return True
+
+            # Standard Compilation - loss function definition and optimizer inclusion
+            self.model.compile(loss=tensorflow.keras.losses.binary_crossentropy,
+                               optimizer=tensorflow.train.AdamOptimizer(),
+                               metrics=['accuracy'])
+            # Standard Training
+            self.model.fit(self.training_features,
+                           self.training_labels,
+                           batch_size=self.BATCH_SIZE,
+                           epochs=self.NUMBER_OF_TRAINING_EPOCHS,
+                           verbose=0)
             return True
         except Exception as e:
             print('[ERROR] NeuralNetworkClassificationEngine train_model: Exception caught while training '
@@ -471,8 +606,8 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     def evaluate_model(self):
         try:
             prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features, self.test_labels)
-            print('[INFO] NeuralNetworkClassificationEngine evaluate: Prediction Loss = {}, '
-                  'Prediction Accuracy = {}'.format(prediction_loss, prediction_accuracy))
+            print('[INFO] NeuralNetworkClassificationEngine evaluate: Test Data Prediction Loss = {}, '
+                  'Test Data Prediction Accuracy = {}'.format(prediction_loss, prediction_accuracy))
             # Model evaluation is complete!
             return True
         except Exception as e:
@@ -484,9 +619,12 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Make a prediction using the trained model for the given feature vector
     def make_a_prediction(self):
         # Choose a random sample from the test features collection
-        feature_vector = self.test_features.loc[[random.sample(range(len(self.test_labels)), 1)]]
+        sample_index = random.sample(range(len(self.training_features),
+                                           len(self.training_features) + len(self.test_features)),
+                                     1)[0]
+        feature_vector = self.test_features.loc[[sample_index]]
         # Return the instance for analysis
-        return feature_vector, self.model(feature_vector)
+        return sample_index, feature_vector, self.model.predict(feature_vector)
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb, task_id):
@@ -509,8 +647,9 @@ class PredictionRationaleEngine(object):
         # Instance definition
         # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{K}$ is the feature vector
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
-        self.instance = namedtuple('instance',
-                                   ['features', 'label', 'weight'])
+        # RecordClasses are mutable alternatives to namedtuples
+        self.instance = recordclass('instance',
+                                    ['features', 'label', 'weight'])
         # A named-tuple for individual models
         self.model_results = namedtuple('model_results',
                                         ['features', 'loss', 'parameters'])
@@ -520,8 +659,8 @@ class PredictionRationaleEngine(object):
         self.perturbed_samples_count = 1000
         # The regularization constraint = \alpha
         self.regularization_constraint = 10
-        # The classifiers under prediction-rationale analysis
-        self.classifiers_under_analysis = task_repository.values()
+        # The <classifier_id, classifier> pairs under prediction-rationale analysis
+        self.classifiers_under_analysis = task_repository.items()
         # A collection for successfully built, compiled, and trained classifiers
         self.competent_classifiers = []
         # The prediction instance under rationale analysis - definition
@@ -545,18 +684,21 @@ class PredictionRationaleEngine(object):
         if self.optimizer.status:
             # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
             for classifier_id, classifier in self.classifiers_under_analysis:
-                classifier_status = classifier.build_model() and \
-                                    classifier.train_model() and \
-                                    classifier.evaluate_model()
+                print('[DEBUG] PredictionRationaleEngine Initialization: Analyzing the predictions of {} '
+                      'which is a {}'.format(classifier_id,
+                                             classifier.__class__.__name__))
+                classifier_status = \
+                    classifier.build_model() and classifier.train_model() and classifier.evaluate_model()
                 # The classifier is setup correctly
                 if classifier_status:
                     self.competent_classifiers.append(classifier)
                     # Start the explanation sequence
                     explanation = self.get_interpretable_explanation(classifier)
                     if explanation is None:
-                        print('[ERROR] PredictionRationaleEngine Explanation: Something went wrong while developing '
-                              'the interpretation. Please refer to the earlier logs for more information '
-                              'on what went wrong!')
+                        print(
+                            '[ERROR] PredictionRationaleEngine Explanation: Something went wrong while developing '
+                            'the interpretation. Please refer to the earlier logs for more information '
+                            'on what went wrong!')
                     print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
                           'for the classifier [{}] is described by [{}].'.format(classifier.__class__.__name__,
                                                                                  explanation.features))
@@ -577,15 +719,36 @@ class PredictionRationaleEngine(object):
         features_under_analysis = classifier.dataframe.columns[:-1]
         # Explain a prediction
         # Make a prediction using the built, compiled, and trained classifier - population
-        features, label = classifier.make_a_prediction()
+        sample_index, features, label = classifier.make_a_prediction()
         self.instance_under_analysis.features = features
         self.instance_under_analysis.label = label
         # The dot product will be 1 -> cos 0 = 1 -> perfect cosine similarity (1) -> Obviously!
         self.instance_under_analysis.weight = self.get_weights(self.instance_under_analysis,
                                                                self.instance_under_analysis)
-        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample prediction instance under '
-              'rationale analysis - Features = {} and Predicted Label = {}'.format(features,
-                                                                                   label))
+        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample non-normalized prediction '
+              'instance under rationale analysis - '
+              'Features = \n{} and '
+              '\nPredicted Label = {}'.format(tabulate(classifier.dataframe.loc[[sample_index]],
+                                                       headers='keys',
+                                                       tablefmt='psql'
+                                                       ),
+                                              (lambda: 'no',
+                                               # Conversion to a list is done to avoid the numpy.bool DeprecationWarning
+                                               lambda: 'yes')[label.tolist()[0][0] > 0.5]()
+                                              )
+              )
+        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample normalized prediction instance '
+              'under rationale analysis - '
+              'Features = \n{} and '
+              '\nPredicted Label = {}'.format(tabulate(features,
+                                                       headers='keys',
+                                                       tablefmt='psql'),
+                                              (lambda: 0,
+                                               # Conversion to a list is done to avoid the numpy.bool DeprecationWarning
+                                               lambda: 1)[
+                                                  label.tolist()[0][0] > 0.5]()
+                                              )
+              )
         # All possible combinations of the features under analysis, n=#global_features, r=#local_interpretable_features
         all_possible_feature_family_combinations = [k for k in itertools.combinations(features_under_analysis,
                                                                                       self.interpretable_features_count
@@ -611,11 +774,14 @@ class PredictionRationaleEngine(object):
                     # Standard Normalization technique 1 - Sample from the vocabulary
                     # Standard Normalization technique 2 - Subtract the family mean from the value
                     # Standard Normalization technique 3 - Divide by the standard deviation of the family
-                    perturbed_value = (random.sample(family_values) - family_mean) / family_std
+                    perturbed_value = (((random.sample(list(family_values.values()), 1)[0]) - family_mean) / family_std)
                     perturbed_sample.features[feature_family] = perturbed_value
                     baremetal_perturbed_sample.features.append(perturbed_value)
                 # The target
-                perturbed_sample.label = classifier.model(perturbed_sample.features)
+                perturbed_sample.label = (lambda: 0,
+                                          lambda: 1)[
+                    # Conversion to a list is done to avoid the numpy.bool DeprecationWarning
+                    classifier.model.predict(perturbed_sample.features).tolist()[0][0] > 0.5]()
                 # The weight
                 perturbed_sample.weight = self.get_weights(self.instance_under_analysis,
                                                            perturbed_sample)
@@ -625,8 +791,9 @@ class PredictionRationaleEngine(object):
                 self.baremetal_perturbed_samples_collection.append(baremetal_perturbed_sample)
             model_output = self.optimizer.optimize(None)
             if model_output[0] is False:
-                print('[ERROR] PredictionRationaleEngine get_interpretable_explanation: Something went wrong during '
-                      'optimization. Please refer to the earlier logs for more information on what went wrong!')
+                print(
+                    '[ERROR] PredictionRationaleEngine get_interpretable_explanation: Something went wrong during '
+                    'optimization. Please refer to the earlier logs for more information on what went wrong!')
                 return None
             model_results_collection.append(self.model_results(features=feature_family_tuple,
                                                                loss=model_output[1],
