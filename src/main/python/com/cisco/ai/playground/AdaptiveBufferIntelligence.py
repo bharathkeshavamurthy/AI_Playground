@@ -12,16 +12,25 @@
 
 # The imports
 import math
-import enum
 import numpy
 import random
 import traceback
 import threading
 import tensorflow
+from enum import Enum
 from collections import namedtuple, deque
+from tensorflow.python.keras.backend import set_session
 
 # Enable eager execution for converting tensors into numpy arrays and vice versa
-tensorflow.enable_eager_execution()
+# tensorflow.enable_eager_execution()
+
+# TODO: Why isn't TensorFlow session able to work with keras layers?
+#  Is it a compatibility issue with different implementations of Keras or
+#  Is it because the sessions are not thread-safe?
+
+# A global thread-safe tensorflow session
+global_tensorflow_session = tensorflow.Session()
+set_session(global_tensorflow_session)
 
 # Mutexes for various threads to access shared objects
 
@@ -79,7 +88,7 @@ EXPLORATION_STRATEGY_DETAILS = namedtuple('exploration_strategy_details',
 # Enumeration entities critical to an extensible design begin here...
 
 # An extensible enumeration entity listing the possible statuses of modules in this design
-class Status(enum):
+class Status(Enum):
     # The module is in a correct working state
     SUCCESS = 0
 
@@ -88,7 +97,7 @@ class Status(enum):
 
 
 # An extensible enumeration entity listing the possible priority types in the design
-class Priority(enum):
+class Priority(Enum):
     # Systems with higher service rates
     HIGH_PRIORITY = 0
 
@@ -97,7 +106,7 @@ class Priority(enum):
 
 
 # An extensible enumeration entity listing the possible prioritization techniques employed in Mnemosyne
-class Prioritization(enum):
+class Prioritization(Enum):
     # Prioritization using TD-error
     TD_ERROR_PRIORITIZATION = 0
 
@@ -112,7 +121,7 @@ class Prioritization(enum):
 
 
 # An extensible enumeration entity listing the possible exploration strategies employed in the RL agent
-class ExplorationStrategy(enum):
+class ExplorationStrategy(Enum):
     # Additive Ornstein-Uhlenbeck Noise
     ORNSTEIN_UHLENBECK_NOISE = 0
 
@@ -183,6 +192,10 @@ class Nexus(object):
                         'packet_drop_count'
                         ])
 
+    # The number of fields in the QUEUE namedtuple that are irrelevant to the state
+    # This is used for reshaping the tensor and include only the relevant fields in the state given to the Actor
+    STATE_IRRELEVANT_FIELDS = 2
+
     # A port entity
     PORT = namedtuple('Port',
                       ['port_identifier',
@@ -230,11 +243,13 @@ class Nexus(object):
             _dedicated_pool_size_per_port > 0]()
         # Initialize the environment
         self.state = self.start()
+
         # The allowed action skeleton - the switch will have an API to validate and execute compliant actions
         # The initial compliant action is [ [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0] ]
-        self.action_skeleton = [[((port * 0) + (queue * 0)) for queue in range(self.number_of_queues_per_port + 1)]
-                                for port in self.number_of_ports]
-        self.action_skeleton.append([0])
+        # self.action_skeleton = [[((port * 0) + (queue * 0)) for queue in range(self.number_of_queues_per_port + 1)]
+        #                         for port in range(self.number_of_ports)]
+        # self.action_skeleton.append([0])
+
         # Successful initialization
         # This seems unnecessary - maybe we can find a use for this later...
         self.status = Status.SUCCESS
@@ -283,60 +298,115 @@ class Nexus(object):
                           leftover_buffer_units_in_the_global_pool=self.global_pool_size)
         # The switch environment state initialization has been completed...
 
+    # Change Log: This method is no longer needed to a change in the Actor architecture
+    # Get the reshape factor in order to reshape the state tensor at the Actor
+    # def get_reshape_factor(self):
+    #     return self.number_of_ports * (
+    #         (self.number_of_queues_per_port * (
+    #                 len(self.QUEUE._fields) - self.STATE_IRRELEVANT_FIELDS) + 1)) + 1
+
     # Get the current state [high-level] of the switch environment
     def get_state(self):
         # A simple getter method for external callers
         return self.state
+
+    # Change Log: Eager Execution is not supported when using placeholders (in 1.13.1)
+    # def get_state_tensor(self):
+    #     ports = []
+    #     try:
+    #         # The ports loop - p
+    #         for port in range(self.number_of_ports):
+    #             queues = []
+    #             # The queues loop - q
+    #             for queue in range(self.number_of_queues_per_port):
+    #                 queue_state = self.state.ports[port].queues[queue]
+    #                 queues.append([queue_state.required_minimum_capacity,
+    #                                queue_state.allowed_maximum_buffer_capacity,
+    #                                queue_state.allocated_buffer_units,
+    #                                queue_state.packet_drop_count])
+    #             # Create an iterable instance of queue tensors specific to port 'p' for stacking later in the routine
+    #             ports.append(tensorflow.convert_to_tensor(
+    #                 numpy.append(tensorflow.constant(queues,
+    #                                                  dtype=tensorflow.int32).numpy(),
+    #                              self.state.ports[port].leftover_buffer_units_in_the_dedicated_pool),
+    #                 dtype=tensorflow.int32))
+    #         # Stack the port-specific tensors, Append the global pool size (leftover: state-specific), ...
+    #         # ...and return the resultant state tensor
+    #         return tensorflow.convert_to_tensor(
+    #             numpy.append(tensorflow.stack(ports,
+    #                                           axis=0).numpy(),
+    #                          self.state.leftover_buffer_units_in_the_global_pool),
+    #             dtype=tensorflow.int32)
+    #     except Exception as exception:
+    #         print('[ERROR] Nexus get_state_tensor: Exception caught while formatting the state of the switch - '
+    #               '[{}]'.format(exception))
+    #         traceback.print_tb(exception.__traceback__)
+    #     return None
 
     # Construct a tensor from the high-level Nexus state and pass it down to the calling routine for...
     # ...analysis/input into the NNs
     # As far as switch design is concerned, we don't need caerus here because external callers should be responsible...
     # ...for mutex acquisitions and releases...
     def get_state_tensor(self):
-        ports = []
+        state = []
         try:
             # The ports loop - p
             for port in range(self.number_of_ports):
-                queues = []
                 # The queues loop - q
                 for queue in range(self.number_of_queues_per_port):
                     queue_state = self.state.ports[port].queues[queue]
-                    queues.append([queue_state.required_minimum_capacity,
-                                   queue_state.allowed_maximum_buffer_capacity,
-                                   queue_state.allocated_buffer_units,
-                                   queue_state.packet_drop_count])
-                # Create an iterable instance of queue tensors specific to port 'p' for stacking later in the routine
-                ports.append(tensorflow.convert_to_tensor(
-                    numpy.append(tensorflow.constant(queues,
-                                                     dtype=tensorflow.int32).numpy(),
-                                 self.state.ports[port].leftover_buffer_units_in_the_dedicated_pool),
-                    dtype=tensorflow.int32))
-            # Stack the port-specific tensors, Append the global pool size (leftover: state-specific), ...
-            # ...and return the resultant state tensor
-            return tensorflow.convert_to_tensor(
-                numpy.append(tensorflow.stack(ports, axis=0).numpy(),
-                             self.state.leftover_buffer_units_in_the_global_pool),
-                dtype=tensorflow.int32)
+                    state.append([queue_state.required_minimum_capacity,
+                                  queue_state.allowed_maximum_buffer_capacity,
+                                  queue_state.allocated_buffer_units,
+                                  queue_state.packet_drop_count])
+                # Append the port-specific dedicated pool state
+                state.append([self.state.ports[port].leftover_buffer_units_in_the_dedicated_pool])
+            # Append the global pool state
+            state.append([self.state.leftover_buffer_units_in_the_global_pool])
+            # The final state representation - restructure the state vector and convert it into a tensor
+            final_state_representation = [k for entry in state for k in entry]
+            return tensorflow.constant(final_state_representation,
+                                       dtype=tensorflow.int32)
         except Exception as exception:
             print('[ERROR] Nexus get_state_tensor: Exception caught while formatting the state of the switch - '
                   '[{}]'.format(exception))
             traceback.print_tb(exception.__traceback__)
         return None
 
+    # Change Log: Eager Execution is not supported when using placeholders (1.13.1)
+    # def get_action_dimension(self):
+    #     ports = []
+    #     try:
+    #         # The ports loop - p
+    #         for port in range(self.number_of_ports):
+    #             # NOPs w.r.t the queues of port 'p' and the dedicated pool of port 'p'
+    #             ports.append([k - k for k in range(self.number_of_queues_per_port + 1)])
+    #         # Append an NOP w.r.t the global pool of Nexus and return the dimensions of the resultant tensor
+    #         return tensorflow.convert_to_tensor(
+    #             numpy.append(tensorflow.constant(ports, dtype=tensorflow.int32).numpy(),
+    #                          0),
+    #             dtype=tensorflow.int32).shape
+    #     except Exception as exception:
+    #         print('[ERROR] Nexus get_action_dimension: Exception caught while determining the '
+    #               'compliant action dimension - [{}]'.format(exception))
+    #         traceback.print_tb(exception.__traceback__)
+    #     return None
+
     # In order to get the action dimension, assume an initial policy of NOP across all queues, ports, and pools.
     # Return the dimensions of the action - output of Apollo
     def get_action_dimension(self):
-        ports = []
+        action = []
         try:
             # The ports loop - p
             for port in range(self.number_of_ports):
                 # NOPs w.r.t the queues of port 'p' and the dedicated pool of port 'p'
-                ports.append([k - k for k in range(self.number_of_queues_per_port + 1)])
+                action.append([k - k for k in range(self.number_of_queues_per_port + 1)])
             # Append an NOP w.r.t the global pool of Nexus and return the dimensions of the resultant tensor
-            return tensorflow.convert_to_tensor(
-                numpy.append(tensorflow.constant(ports, axis=0).numpy(),
-                             0),
-                dtype=tensorflow.int32).shape
+            action.append([0])
+            # The final restructured representation of the compliant action
+            final_action_representation = [k for entry in action for k in entry]
+            return tensorflow.constant(final_action_representation,
+                                       dtype=tensorflow.int32).shape
         except Exception as exception:
             print('[ERROR] Nexus get_action_dimension: Exception caught while determining the '
                   'compliant action dimension - [{}]'.format(exception))
@@ -384,6 +454,7 @@ class Nexus(object):
     # Return <reward, next_state>
     def execute(self, action):
         print('[DEBUG] Nexus transition: Transitioning the underlying MDP...')
+
         # TODO: Do we need a structural validation even after the actor getting a compliant action from ...
         #  ...Nexus before execution?
         # # Initial structural validation of the action
@@ -393,6 +464,7 @@ class Nexus(object):
         #     print('[ERROR] Nexus validate_action: Non-Compliant Action received from the recommendation system - '
         #           '{}'.format(str(action)))
         #     return False
+
         # C_{global} global pool update
         leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
             self.number_of_ports]
@@ -449,79 +521,130 @@ class Nexus(object):
 
 # The Actor Network
 class Actor(object):
-    # The number of neurons in the input layer of the actor network
-    NUMBER_OF_INPUT_NEURONS = 5200
+    # The number of neurons in the first hidden layer of the actor network
+    NUMBER_OF_HIDDEN_UNITS_1 = 5200
 
-    # The number of neurons in the hidden layer of the actor network
-    NUMBER_OF_HIDDEN_NEURONS = 3900
+    # The number of neurons in the second hidden layer of the actor network
+    NUMBER_OF_HIDDEN_UNITS_2 = 3900
+
+    # Change Log: The reshape_factor arg is no longer needed due to a change in the way I build the network and ...
+    # ...predict the output
+
+    # def __init__(self, _state_dimension, _action_dimension, _learning_rate,
+    #              _target_tracker_coefficient, _batch_size, _reshape_factor):
 
     # The initialization sequence
-    def __init__(self, _state_dimension, _action_dimension, _learning_rate, _target_tracker_coefficient, _batch_size):
+    def __init__(self, _tensorflow_session, _state_dimension, _action_dimension,
+                 _learning_rate, _target_tracker_coefficient, _batch_size):
         print('[INFO] Actor Initialization: Bringing things up...')
         # Initializing the essential input parameters with the given arguments
+        self.tensorflow_session = _tensorflow_session
         self.state_dimension = _state_dimension
         self.action_dimension = _action_dimension
         self.learning_rate = _learning_rate
         self.target_tracker_coefficient = _target_tracker_coefficient
         self.batch_size = _batch_size
+
+        # self.reshape_factor = _reshape_factor
+
         # Declaring the internal entities and outputs
-        self.model = None
-        self.target_model = None
+        self.input, self.output = self.build()
+        self.network_parameters = tensorflow.trainable_variables()
+        self.target_input, self.target_output = self.build()
+        self.target_network_parameters = tensorflow.trainable_variables()[len(self.network_parameters):]
+
+        # Turn eager mode off
+        # tensorflow.disable_eager_execution()
+
+        self.action_gradients = tensorflow.placeholder(tensorflow.float32,
+                                                       self.action_dimension)
+        # The internal gradient operation in the Policy Gradient step
+        self.unnormalized_actor_gradients = tensorflow.gradients(self.output,
+                                                                 self.network_parameters,
+                                                                 -self.action_gradients)
+        # Normalization w.r.t the batch size - this refers to the expectation operator in the Policy Gradient step
+        self.normalized_actor_gradients = list(map(lambda x: tensorflow.div(x,
+                                                                            self.batch_size),
+                                                   self.unnormalized_actor_gradients))
+        # The Adam Optimizer
+        self.optimized_result = tensorflow.train.AdamOptimizer(learning_rate=self.learning_rate).apply_gradients(
+            zip(self.normalized_actor_gradients,
+                self.network_parameters))
+        # The target update - soft update using the target_update_coefficient (/tau)
+        self.updated_target_network_parameters = [self.target_network_parameters[i].assign(
+            tensorflow.multiply(self.network_parameters[i],
+                                self.target_tracker_coefficient) + tensorflow.multiply(
+                self.target_network_parameters[i],
+                (1.0 - self.target_tracker_coefficient))) for i in range(len(self.target_network_parameters))]
         # The initialization of the actor instance has been completed...
 
     # Build the Actor Network
     def build(self):
-        self.model = tensorflow.keras.Sequential(
-            layers=[tensorflow.keras.layers.Dense(units=self.NUMBER_OF_INPUT_NEURONS,
-                                                  input_shape=self.state_dimension,
-                                                  activation=tensorflow.keras.activations.relu),
-                    tensorflow.keras.layers.BatchNormalization(),
-                    tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_NEURONS,
-                                                  activation=tensorflow.keras.activations.relu),
-                    tensorflow.keras.layers.BatchNormalization(),
-                    tensorflow.keras.layers.Dense(units=self.action_dimension,
-                                                  activation=tensorflow.keras.activations.tanh,
-                                                  kernel_initializer='glorot_uniform')
-                    ],
-            name='Apollo-Actor-v1')
-        # Return the model in case an external caller needs this
-        return self.model
+        # A sequential model with keras layers
+        input_data = tensorflow.keras.layers.Input(shape=self.state_dimension)
+        dense_layer_1 = tensorflow.keras.layers.Dense(
+            units=self.NUMBER_OF_HIDDEN_UNITS_1,
+            activation=tensorflow.keras.activations.relu)(input_data)
+        batch_normalization_layer_1 = tensorflow.keras.layers.BatchNormalization()(dense_layer_1)
+        dense_layer_2 = tensorflow.keras.layers.Dense(
+            units=self.NUMBER_OF_HIDDEN_UNITS_2,
+            activation=tensorflow.keras.activations.relu)(batch_normalization_layer_1)
+        batch_normalization_layer_2 = tensorflow.keras.layers.BatchNormalization()(dense_layer_2)
+        output_data = tensorflow.keras.layers.Dense(
+            units=self.action_dimension.dims[0].value,
+            activation=tensorflow.keras.activations.tanh,
+            kernel_initializer='glorot_uniform')(batch_normalization_layer_2)
+        return input_data, output_data
+
+        # Print the summary of the model for aesthetic purposes
+        # print('[INFO] Actor build: The summary of the model built is printed below...')
+        # model.summary()
+
+        # Don't return the model per se, return the output (a different approach)
+        # return tensorflow.keras.models.Model(inputs=[input_data],
+        #                                      outputs=[output_data])
+
         # Model-Building has been completed...
 
     # Train the built model - define the loss, evaluate the gradients, and use the right optimizer...
-    def train(self, scaled_outputs, action_gradients):
+    def train(self, _input, _action_gradients):
         # Deep Deterministic Policy Gradient (DDPG)
-        unnormalized_actor_gradients = tensorflow.gradients(scaled_outputs,
-                                                            self.model.trainable_variables,
-                                                            -action_gradients)
-        # Normalization w.r.t the batch size - this refers to the expectation operator in the Policy Gradient step
-        normalized_actor_gradients = list(map(lambda x: tensorflow.div(x,
-                                                                       self.batch_size),
-                                              unnormalized_actor_gradients))
-        # Adam Optimizer
-        return tensorflow.train.AdamOptimizer(learning_rate=self.learning_rate).apply_gradients(
-            zip(normalized_actor_gradients,
-                self.model.trainable_variables))
+        return self.tensorflow_session.run(self.optimized_result,
+                                           feed_dict={
+                                               self.input: _input,
+                                               self.action_gradients: _action_gradients
+                                           })
         # DDPG-based Actor Network optimization has been completed...
 
     # Predict actions for either the batch of states sampled from the replay memory OR...
     # ...for the individual state observed from the switch environment
     def predict(self, state_batch):
+        # Reshaping is not necessary now
+        # state_batch = tensorflow.reshape(state_batch,
+        #                                  [self.reshape_factor, ])
+
         # TODO: Scaling here, if necessary
-        return self.model(state_batch)
+        return self.tensorflow_session.run(self.output,
+                                           feed_dict={
+                                               self.input: state_batch
+                                           })
 
     # Soft target update procedure
     def update_targets(self):
-        # (\theta \tau) + (\theta' (1 - \tau))
-        for i in range(len(self.target_model.trainable_variables)):
-            self.target_model.trainable_variables[i].assign(
-                tensorflow.multiply(self.model.trainable_variables, self.target_tracker_coefficient) + (
-                    tensorflow.multiply(self.target_model.trainable_variables, (1 - self.target_tracker_coefficient))))
+        return self.tensorflow_session.run(self.updated_target_network_parameters)
 
     # Predict actions from the target network for target Q-value evaluation during training, i.e. (r_t + \gamma Q(s, a))
     def predict_targets(self, target_state_batch):
+        # Reshaping is not necessary now
+        # target_state_batch = tensorflow.reshape(target_state_batch,
+        #                                         (self.reshape_factor,
+        #                                          1))
+
         # TODO: Scaling here, if necessary
-        return self.target_model(target_state_batch)
+        return self.tensorflow_session.run(self.target_output,
+                                           feed_dict={
+                                               self.target_input: target_state_batch
+                                           })
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -536,82 +659,133 @@ class Actor(object):
 
 # The Critic Network
 class Critic(object):
-    # The number of neurons in the input layer of the critic network
-    NUMBER_OF_INPUT_NEURONS = 5200
+    # The number of neurons in the first hidden layer of the critic network w.r.t the state_input
+    NUMBER_OF_HIDDEN_UNITS_STATE_1 = 5200
 
-    # The number of neurons in the hidden layer of the critic network
-    NUMBER_OF_HIDDEN_NEURONS = 3900
+    # The number of neurons in the second hidden layer of the critic network w.r.t the state_input
+    NUMBER_OF_HIDDEN_UNITS_STATE_2 = 3900
+
+    # The number of neurons in the first hidden layer of the critic network w.r.t the action_input
+    NUMBER_OF_HIDDEN_UNITS_ACTION_1 = 5200
+
+    # The number of neurons in the second hidden layer of the critic network w.r.t the action_input
+    NUMBER_OF_HIDDEN_UNITS_ACTION_2 = 3900
 
     # The initialization sequence
-    def __init__(self, _state_dimension, _action_dimension, _learning_rate, _target_tracker_coefficient):
+    def __init__(self, _tensorflow_session, _state_dimension, _action_dimension,
+                 _learning_rate, _target_tracker_coefficient, _number_of_actor_network_weights):
         print('[INFO] Critic Initialization: Bringing things up...')
         # Initializing the input parameters with the given arguments
+        self.tensorflow_session = _tensorflow_session
         self.state_dimension = _state_dimension
         self.action_dimension = _action_dimension
         self.learning_rate = _learning_rate
         self.target_tracker_coefficient = _target_tracker_coefficient
+        self.number_of_actor_weights = _number_of_actor_network_weights
         # Declaring the internal entities and outputs
-        self.model = None
-        self.target_model = None
+        self.state, self.action, self.output = self.build()
+        self.network_parameters = tensorflow.trainable_variables()[self.number_of_actor_weights:]
+        self.target_state, self.target_action, self.target_output = self.build()
+        self.target_network_parameters = tensorflow.trainable_variables()[
+                                         self.number_of_actor_weights + len(self.network_parameters):]
+        # The target Q-value from the Bellman equation is set as a placeholder here...
+        self.target_q_value = tensorflow.placeholder(dtype=tensorflow.float32,
+                                                     shape=[None, 1])
+        # A standard mean-squared error loss function
+        self.loss = tensorflow.losses.mean_squared_error(self.output,
+                                                         self.target_q_value)
+        # The Adam Optimizer
+        self.optimized_result = tensorflow.train.AdamOptimizer(self.learning_rate).minimize(self.loss)
+        # The gradient of the predicted Q-value w.r.t the action
+        self.action_gradients = tensorflow.gradients(self.output,
+                                                     self.action)
+        # The target update - soft update using the target_update_coefficient (/tau)
+        self.updated_target_network_parameters = [self.target_network_parameters[i].assign(
+            tensorflow.multiply(self.network_parameters[i],
+                                self.target_tracker_coefficient) + tensorflow.multiply(
+                self.target_network_parameters[i],
+                (1.0 - self.target_tracker_coefficient))) for i in range(len(self.target_network_parameters))]
         # The initialization sequence has been completed...
 
     # Build the Critic Network
     # While fitting, it takes in both state and action as inputs...
     def build(self):
-        action_hidden_layer = tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_NEURONS,
-                                                            input_shape=self.action_dimension)
-        self.model = tensorflow.keras.Sequential(
-            layers=[tensorflow.keras.layers.Dense(units=self.NUMBER_OF_INPUT_NEURONS,
-                                                  activation=tensorflow.keras.activations.relu,
-                                                  input_shape=self.state_dimension,
-                                                  kernel_initializer='glorot_uniform'),
-                    tensorflow.keras.layers.BatchNormalization(),
-                    tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_NEURONS)
-                    ],
-            name='Apollo-Critic-v1')
-        action_modification_layer = tensorflow.keras.layers.Multiply(action_hidden_layer.weights)
-        state_modification_layer = tensorflow.keras.layers.Multiply(self.model.weights)
-        combination_layer = tensorflow.keras.layers.Add(action_modification_layer,
-                                                        state_modification_layer,
-                                                        action_hidden_layer.bias)
-        self.model.add(combination_layer)
-        self.model.add(tensorflow.keras.layers.Activation(activation=tensorflow.keras.activations.relu))
-        self.model.add(tensorflow.keras.layers.Dense(units=1,
-                                                     kernel_initializer='glorot_uniform',
-                                                     ))
-        # Return the model in case some external caller needs it...
-        return self.model
-        # Model-Building has been completed...
+        # The state input layers
+        state_input = tensorflow.keras.layers.Input(shape=self.state_dimension,
+                                                    name='state_input')
+        state_input_modified = tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_STATE_1,
+                                                             activation=tensorflow.keras.activations.relu)(state_input)
+        state_input_whitened = tensorflow.keras.layers.BatchNormalization()(state_input_modified)
+        state_input_whitened_modified = tensorflow.keras.layers.Dense(
+            units=self.NUMBER_OF_HIDDEN_UNITS_STATE_2,
+            activation=tensorflow.keras.activations.relu)(state_input_whitened)
+        # The action input layers
+        action_input = tensorflow.keras.layers.Input(shape=self.action_dimension,
+                                                     name='action_input')
+        action_input_modified = tensorflow.keras.layers.Dense(
+            units=self.NUMBER_OF_HIDDEN_UNITS_ACTION_1,
+            activation=tensorflow.keras.activations.relu)(action_input)
+        action_input_whitened = tensorflow.keras.layers.BatchNormalization()(action_input_modified)
+        action_input_whitened_modified = tensorflow.keras.layers.Dense(
+            units=self.NUMBER_OF_HIDDEN_UNITS_ACTION_2,
+            activation=tensorflow.keras.activations.relu)(action_input_whitened)
+        # Merge the two branches corresponding to the state input and the action input
+        merged_result = tensorflow.keras.layers.concatenate([state_input_whitened_modified,
+                                                             action_input_whitened_modified])
+        output = tensorflow.keras.layers.Dense(units=1,
+                                               kernel_initializer='glorot_uniform')(merged_result)
+        return state_input, action_input, output
+
+        # Change Log: Don't return the model anymore, directly return the output...
+        # model = tensorflow.keras.models.Model(inputs=[state_input,
+        #                                               action_input],
+        #                                       outputs=[output])
+
+        # Print the summary of the model for aesthetic purposes
+        # print('[INFO] Critic build: The summary of the model is printed below.')
+        # model.summary()
+
+        # return model
+
+        # Critic model building has been completed...
 
     # Train the built model, define the loss function, and use the right optimizer...
-    def train(self, predicted_q_value, target_q_value):
-        loss = tensorflow.keras.losses.mean_squared_error(target_q_value, predicted_q_value)
-        # Adam Optimizer
-        optimized_result = tensorflow.train.AdamOptimizer(self.learning_rate).minimize(loss)
-        return optimized_result
+    def train(self, _state, _action, _target_q_value):
+        return self.tensorflow_session.run([self.output, self.optimized_result],
+                                           feed_dict={
+                                               self.state: _state,
+                                               self.action: _action,
+                                               self.target_q_value: _target_q_value
+                                           })
         # MSE-optimization of the Critic Network has been completed...
 
-    @staticmethod
     # \triangledown_\{a}\ Q(\vec{S}, a)
-    def get_action_gradients(predicted_q_value, action):
-        return tensorflow.gradients(predicted_q_value, action)
+    def get_action_gradients(self, _state, _action):
+        return self.tensorflow_session.run(self.action_gradients,
+                                           feed_dict={
+                                               self.state: _state,
+                                               self.action: _action
+                                           })
 
     # Estimate the Q-value for the given state-action pair
-    def predict(self, state, action):
-        return self.model(state, action)
+    def predict(self, _state, _action):
+        return self.tensorflow_session.run(self.output,
+                                           feed_dict={
+                                               self.state: _state,
+                                               self.action: _action
+                                           })
 
     # Estimate the Q-value for the state-action pair using the Target Critic Network
-    def predict_targets(self, state, action):
-        return self.target_model(state, action)
+    def predict_targets(self, _target_state, _target_action):
+        return self.tensorflow_session.run(self.target_output,
+                                           feed_dict={
+                                               self.target_state: _target_state,
+                                               self.target_action: _target_action
+                                           })
 
     # Soft target update procedure
     def update_targets(self):
-        # (\theta \tau) + (\theta' (1 - \tau))
-        for i in range(len(self.target_model.trainable_variables)):
-            self.target_model.trainable_variables[i].assign(
-                tensorflow.multiply(self.model.trainable_variables, self.target_tracker_coefficient) + (
-                    tensorflow.multiply(self.target_model.trainable_variables,
-                                        (1 - self.target_tracker_coefficient))))
+        return self.tensorflow_session.run(self.updated_target_network_parameters)
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -845,22 +1019,26 @@ class Apollo(object):
     MAXIMUM_NUMBER_OF_EPISODES = 1e5
 
     # The initialization sequence
-    def __init__(self, _environment_details, _actor_design_details, _critic_design_details,
-                 _replay_memory_details, _exploration_strategy_details, _batch_size, _discount_factor,
+    # Change Log: The environment_details member is no longer needed as I'm directly getting a reference to Nexus.
+    def __init__(self, _nexus, _actor_design_details, _critic_design_details, _replay_memory_details,
+                 _exploration_strategy_details, _batch_size, _discount_factor,
                  _iterations_per_episode, _maximum_number_of_episodes):
         print('[INFO] Apollo Initialization: Bringing things up...')
         # The status indicator flag
         self.status = Status.SUCCESS
         # Initializing the relevant members - default to hard-coded values upon invalidation
         self.utilities = Utilities()
-        self.environment_details = (lambda: ENVIRONMENT_DETAILS(number_of_ports=None,
-                                                                number_of_queues_per_port=None,
-                                                                global_pool_size=None,
-                                                                dedicated_pool_size_per_port=None),
-                                    lambda: _environment_details)[_environment_details is not None and
-                                                                  self.utilities.custom_instance_validation(
-                                                                      _environment_details,
-                                                                      ENVIRONMENT_DETAILS)]()
+
+        # This is unnecessary - I'm directly getting a reference to Nexus.
+        # self.environment_details = (lambda: ENVIRONMENT_DETAILS(number_of_ports=None,
+        #                                                         number_of_queues_per_port=None,
+        #                                                         global_pool_size=None,
+        #                                                         dedicated_pool_size_per_port=None),
+        #                             lambda: _environment_details)[_environment_details is not None and
+        #                                                           self.utilities.custom_instance_validation(
+        #                                                               _environment_details,
+        #                                                               ENVIRONMENT_DETAILS)]()
+
         self.actor_design_details = (lambda: ACTOR_DESIGN_DETAILS(learning_rate=None,
                                                                   target_tracker_coefficient=None,
                                                                   batch_size=None),
@@ -913,69 +1091,129 @@ class Apollo(object):
             _maximum_number_of_episodes is not None and
             isinstance(_maximum_number_of_episodes, int) and
             _maximum_number_of_episodes > 0]()
+
+        # This is unnecessary - I'm directly getting a reference to Nexus.
         # Create the Nexus switch environment
-        self.nexus = Nexus(self.environment_details.number_of_ports,
-                           self.environment_details.number_of_queues_per_port,
-                           self.environment_details.global_pool_size,
-                           self.environment_details.dedicated_pool_size_per_port)
+        # self.nexus = Nexus(self.environment_details.number_of_ports,
+        #                    self.environment_details.number_of_queues_per_port,
+        #                    self.environment_details.global_pool_size,
+        #                    self.environment_details.dedicated_pool_size_per_port)
+
+        self.nexus = _nexus
+
         # Get the switch environment details from the created Nexus instance
         # NOTE: I don't need a mutex acquisition and release strategy in the initialization routine of Apollo
         self.state_dimension = self.nexus.get_state_tensor().shape
         self.action_dimension = self.nexus.get_action_dimension()
+
+        # Change Log: This is no longer needed as I changed the architecture
+        # self.reshape_factor = self.nexus.get_reshape_factor()
+
         # State and Action validation check
         if self.state_dimension is None or self.action_dimension is None:
             print('[ERROR] Apollo Initialization: Something went wrong while obtaining the state and compliant action '
                   'information from Nexus. Please refer to the earlier logs for more details on this error.')
             self.status = Status.FAILURE
-        # Create the Actor and Critic Networks
-        self.actor = Actor(self.state_dimension,
-                           self.action_dimension,
-                           self.actor_design_details.learning_rate,
-                           self.actor_design_details.target_tracker_coefficient,
-                           self.actor_design_details.batch_size)
-        self.critic = Critic(self.state_dimension,
-                             self.action_dimension,
-                             self.critic_design_details.learning_rate,
-                             self.critic_design_details.target_tracker_coefficient)
-        # Initialize the Prioritized Experiential Replay Memory
-        self.mnemosyne = Mnemosyne(self.replay_memory_details.memory_capacity,
-                                   self.replay_memory_details.prioritization_strategy,
-                                   self.replay_memory_details.revisitation_constraint_constant,
-                                   self.replay_memory_details.prioritization_level,
-                                   self.replay_memory_details.random_seed)
-        # Initialize the Exploration Noise Generator
-        self.artemis = Artemis(self.exploration_strategy_details.exploration_strategy,
-                               self.exploration_strategy_details.action_dimension,
-                               self.exploration_strategy_details.exploration_factor,
-                               self.exploration_strategy_details.exploration_decay,
-                               self.exploration_strategy_details.exploration_factor_min,
-                               self.exploration_strategy_details.x0,
-                               self.exploration_strategy_details.mu,
-                               self.exploration_strategy_details.theta,
-                               self.exploration_strategy_details.sigma,
-                               self.exploration_strategy_details.dt)
+
+        # Change Log: A change in the Actor constructor because I no longer need the reshape_factor argument
+        # self.actor = Actor(self.state_dimension,
+        #                    self.action_dimension,
+        #                    self.actor_design_details.learning_rate,
+        #                    self.actor_design_details.target_tracker_coefficient,
+        #                    self.actor_design_details.batch_size,
+        #                    self.reshape_factor)
+
+        # Moving these initializations to the start() routine to persist the tensorflow session...
+        # with tensorflow.Session() as self.session:
+        #     # Create the Actor and Critic Networks
+        #     self.actor = Actor(self.session,
+        #                        self.state_dimension,
+        #                        self.action_dimension,
+        #                        self.actor_design_details.learning_rate,
+        #                        self.actor_design_details.target_tracker_coefficient,
+        #                        self.actor_design_details.batch_size)
+        #     self.critic = Critic(self.session,
+        #                          self.state_dimension,
+        #                          self.action_dimension,
+        #                          self.critic_design_details.learning_rate,
+        #                          self.critic_design_details.target_tracker_coefficient,
+        #                          len(self.actor.network_parameters) + len(self.actor.target_network_parameters))
+        #     # Initialize the Prioritized Experiential Replay Memory
+        #     self.mnemosyne = Mnemosyne(self.replay_memory_details.memory_capacity,
+        #                                self.replay_memory_details.prioritization_strategy,
+        #                                self.replay_memory_details.revisitation_constraint_constant,
+        #                                self.replay_memory_details.prioritization_level,
+        #                                self.replay_memory_details.random_seed)
+        #     # Initialize the Exploration Noise Generator
+        #     self.artemis = Artemis(self.exploration_strategy_details.exploration_strategy,
+        #                            self.exploration_strategy_details.action_dimension,
+        #                            self.exploration_strategy_details.exploration_factor,
+        #                            self.exploration_strategy_details.exploration_decay,
+        #                            self.exploration_strategy_details.exploration_factor_min,
+        #                            self.exploration_strategy_details.x0,
+        #                            self.exploration_strategy_details.mu,
+        #                            self.exploration_strategy_details.theta,
+        #                            self.exploration_strategy_details.sigma,
+        #                            self.exploration_strategy_details.dt)
+
         # The initialization sequence has been completed
 
     # Start the interaction with the environment and the training process
     def start(self):
         print('[INFO] Apollo train: Interacting with the switch environment and initiating the training process')
         try:
-            # Build the Actor and Critic Networks
-            self.actor.build()
-            self.critic.build()
+
+            # Change log: Explicit call is no longer needed - I perform internal model building during initialization
+            # # Build the Actor and Critic Networks
+            # self.actor.build()
+            # self.critic.build()
+
+            # Thread-safe global reference
+            global global_tensorflow_session
+
+            # Create the Actor and Critic Networks
+            actor = Actor(global_tensorflow_session,
+                          self.state_dimension,
+                          self.action_dimension,
+                          self.actor_design_details.learning_rate,
+                          self.actor_design_details.target_tracker_coefficient,
+                          self.actor_design_details.batch_size)
+            critic = Critic(global_tensorflow_session,
+                            self.state_dimension,
+                            self.action_dimension,
+                            self.critic_design_details.learning_rate,
+                            self.critic_design_details.target_tracker_coefficient,
+                            len(actor.network_parameters) + len(actor.target_network_parameters))
+            # Initialize the Prioritized Experiential Replay Memory
+            mnemosyne = Mnemosyne(self.replay_memory_details.memory_capacity,
+                                  self.replay_memory_details.prioritization_strategy,
+                                  self.replay_memory_details.revisitation_constraint_constant,
+                                  self.replay_memory_details.prioritization_level,
+                                  self.replay_memory_details.random_seed)
+            # Initialize the Exploration Noise Generator
+            artemis = Artemis(self.exploration_strategy_details.exploration_strategy,
+                              self.exploration_strategy_details.action_dimension,
+                              self.exploration_strategy_details.exploration_factor,
+                              self.exploration_strategy_details.exploration_decay,
+                              self.exploration_strategy_details.exploration_factor_min,
+                              self.exploration_strategy_details.x0,
+                              self.exploration_strategy_details.mu,
+                              self.exploration_strategy_details.theta,
+                              self.exploration_strategy_details.sigma,
+                              self.exploration_strategy_details.dt)
             # Start the interaction with Nexus
             for episode in range(self.maximum_number_of_episodes):
                 for iteration in range(self.iterations_per_episode):
                     # Initialize/Re-Train/Update the target networks in this off-policy DDQN-architecture
-                    self.actor.update_targets()
-                    self.critic.update_targets()
+                    actor.update_targets()
+                    critic.update_targets()
                     # Observe the state, execute an action, and get the feedback from the switch environment
                     # Automatic next_state transition fed in by using the Nexus instance
                     # Transition and validation is encapsulated within Nexus
                     # Mutex acquisition
                     caerus.acquire()
                     state = self.nexus.get_state_tensor()
-                    action = self.artemis.execute(self.actor.predict(state))
+                    action = artemis.execute(actor.predict(state))
                     feedback = self.nexus.execute(action)
                     # Mutex release
                     caerus.release()
@@ -986,39 +1224,40 @@ class Apollo(object):
                               'Please check the compatibility between Apollo and the Nexus variant')
                         return False
                     # Find the target Q-value, the predicted Q-value, and subsequently the TD-error
-                    target_q = feedback.reward + (self.discount_factor * self.critic.predict_targets(
+                    target_q = feedback.reward + (self.discount_factor * critic.predict_targets(
                         feedback.next_state,
-                        self.actor.predict_targets(feedback.next_state)))
-                    predicted_q = self.critic.predict(state,
-                                                      action)
+                        actor.predict_targets(feedback.next_state)))
+                    predicted_q = critic.predict(state,
+                                                 action)
                     td_error = predicted_q - target_q
                     # Remember this experience
-                    self.mnemosyne.remember(state,
-                                            action,
-                                            feedback.reward,
-                                            feedback.next_state,
-                                            td_error)
+                    mnemosyne.remember(state,
+                                       action,
+                                       feedback.reward,
+                                       feedback.next_state,
+                                       td_error)
                     # Start the replay sequence for training
-                    if len(self.mnemosyne.memory) >= self.batch_size:
+                    if len(mnemosyne.memory) >= self.batch_size:
                         # Prioritization strategy specific replay
-                        s_batch, a_batch, r_batch, s2_batch, td_error_batch = self.mnemosyne.replay(self.batch_size)
-                        target_q = self.critic.predict_targets(s2_batch,
-                                                               self.actor.predict_targets(s2_batch))
+                        s_batch, a_batch, r_batch, s2_batch, td_error_batch = mnemosyne.replay(self.batch_size)
+                        target_q = critic.predict_targets(s2_batch,
+                                                          actor.predict_targets(s2_batch))
                         target_q_values = []
                         for k in range(self.batch_size):
                             target_q_values.append(r_batch[k] + (self.discount_factor * target_q[k]))
                         # Train the Critic - standard MSE optimization
-                        self.critic.train(self.critic.predict(s_batch,
-                                                              a_batch),
-                                          numpy.reshape(target_q_values,
-                                                        newshape=(1,
-                                                                  self.batch_size)))
+                        critic.train(s_batch,
+                                     a_batch,
+                                     numpy.reshape(target_q_values,
+                                                   newshape=(1,
+                                                             self.batch_size)))
                         # Get the action gradients for DDPG
-                        action_gradients = self.critic.get_action_gradients(s_batch,
-                                                                            self.actor.predict(s_batch))
+                        action_output = actor.predict(s_batch)
+                        action_gradients = critic.get_action_gradients(s_batch,
+                                                                       action_output)
                         # Train the Actor - DDPG
-                        self.actor.train(self.actor.predict(s_batch),
-                                         action_gradients[0])
+                        actor.train(actor.predict(s_batch),
+                                    action_gradients[0])
         except Exception as exception:
             print('[ERROR] Apollo train: Exception caught while interacting with the Nexus switch environment and '
                   'training the Actor-Critic DDQN-PER framework - [{}]'.format(exception))
@@ -1058,10 +1297,10 @@ class Ares(object):
             for q in range(self.nexus.number_of_queues_per_port):
                 if self.nexus.get_state().ports[p].queues[q].priority == Priority.HIGH_PRIORITY:
                     # A slightly higher arrival rate for high-priority queues
-                    port_specific_arrival_rates.append(random.randrange(1, 16, 0.1))
+                    port_specific_arrival_rates.append(random.randrange(1, 32, 1))
                 else:
                     # A lower arrival rate for low-priority queues
-                    port_specific_arrival_rates.append(random.randrange(1, 8, 0.1))
+                    port_specific_arrival_rates.append(random.randrange(1, 16, 1))
             self.arrival_rates.append(port_specific_arrival_rates)
         # Assign service rates to each individual queue
         self.service_rates = []
@@ -1155,13 +1394,16 @@ if __name__ == '__main__':
                   dedicated_pool_size_per_port)
     action_dimension = nexus.get_action_dimension()
     if action_dimension is None:
-        print('[ERROR] AdaptiveBufferIntelligence Trigger: Something went wrong while obtaining the action dimension'
+        print('[ERROR] AdaptiveBufferIntelligence Trigger: Something went wrong while obtaining the action dimension '
               'from Nexus. Please refer to the earlier logs for more details on this error. Exiting!')
         raise SystemExit
-    environment_details = ENVIRONMENT_DETAILS(number_of_ports=number_of_ports,
-                                              number_of_queues_per_port=number_of_queues_per_port,
-                                              global_pool_size=global_pool_size,
-                                              dedicated_pool_size_per_port=dedicated_pool_size_per_port)
+
+    # This is unnecessary right now. I'm directly passing a reference to Nexus.
+    # environment_details = ENVIRONMENT_DETAILS(number_of_ports=number_of_ports,
+    #                                           number_of_queues_per_port=number_of_queues_per_port,
+    #                                           global_pool_size=global_pool_size,
+    #                                           dedicated_pool_size_per_port=dedicated_pool_size_per_port)
+
     # Actor Design
     actor_design_details = ACTOR_DESIGN_DETAILS(learning_rate=1e-4,
                                                 target_tracker_coefficient=0.01,
@@ -1170,7 +1412,7 @@ if __name__ == '__main__':
     critic_design_details = CRITIC_DESIGN_DETAILS(learning_rate=1e-5,
                                                   target_tracker_coefficient=0.01)
     # Replay Memory Design
-    replay_memory_design_details = REPLAY_MEMORY_DETAILS(memory_capacity=1e9,
+    replay_memory_design_details = REPLAY_MEMORY_DETAILS(memory_capacity=int(1e9),
                                                          # Random Sampling based replay strategy
                                                          prioritization_strategy=Prioritization.RANDOM,
                                                          revisitation_constraint_constant=None,
@@ -1199,11 +1441,18 @@ if __name__ == '__main__':
     iterations_per_episode = 1e3
     # Maximum Number of Episodes
     maximum_number_of_episodes = 1e5
+
+    # Old call: The environment_details arg is no longer needed. Pass Nexus directly to Apollo.
+    # apollo = Apollo(environment_details, actor_design_details, critic_design_details, replay_memory_design_details,
+    #                 exploration_strategy_design_details, batch_area, discount_factor, iterations_per_episode,
+    #                 maximum_number_of_episodes)
+
     # Create a timer thread for Ares initialized with Nexus and start the evaluation thread
     # Additionally, create an instance of Apollo and start that simultaneously
-    apollo = Apollo(environment_details, actor_design_details, critic_design_details, replay_memory_design_details,
-                    exploration_strategy_design_details, batch_area, discount_factor, iterations_per_episode,
-                    maximum_number_of_episodes)
+    apollo = Apollo(nexus, actor_design_details, critic_design_details, replay_memory_design_details,
+                    exploration_strategy_design_details, batch_area, discount_factor, int(iterations_per_episode),
+                    int(maximum_number_of_episodes))
+    # Status check
     if apollo.status == Status.FAILURE:
         print('[ERROR] AdaptiveBufferIntelligence Trigger: Something went wrong during the initialization of Apollo. '
               'Please refer to the earlier logs for more information on this error.')
