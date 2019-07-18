@@ -410,10 +410,10 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     TRAINING_SPLIT = 0.8
 
     # The number of neurons in the input layer of the NN model
-    NUMBER_OF_INPUT_UNITS = 1024
+    NUMBER_OF_HIDDEN_UNITS_1 = 1024
 
     # The number of neurons in the hidden layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS = 2048
+    NUMBER_OF_HIDDEN_UNITS_2 = 2048
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
     BATCH_SIZE = 50
@@ -564,12 +564,12 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
         try:
             # Construct a standard NN model with one hidden layer and ReLU & sigmoid non-linearities
             self.model = tensorflow.keras.Sequential([
-                # The input layer
-                tensorflow.keras.layers.Dense(units=self.NUMBER_OF_INPUT_UNITS,
+                # The input layer (input_shape = (len(self.dataframe.columns) - 1,)) and the first hidden layer
+                tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_1,
                                               input_shape=(len(self.dataframe.columns) - 1,),
                                               activation=tensorflow.nn.relu),
                 # The hidden layer
-                tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS,
+                tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_2,
                                               activation=tensorflow.nn.relu),
                 # The output layer
                 tensorflow.keras.layers.Dense(units=1,
