@@ -409,20 +409,17 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Use ${TRAINING_SPLIT} * 100% of the data for training and the remaining for testing and/or validation
     TRAINING_SPLIT = 0.8
 
-    # The Geoff-Hinton Dropout rate for the regularization layer
-    KEEP_PROBABILITY = 0.8
-
     # The number of neurons in the input layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_1 = 1024
+    NUMBER_OF_HIDDEN_UNITS_1 = 4096
 
     # The number of neurons in the hidden layer of the NN model
     NUMBER_OF_HIDDEN_UNITS_2 = 2048
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
-    BATCH_SIZE = 50
+    BATCH_SIZE = 64
 
     # The number of epochs to train the model
-    NUMBER_OF_TRAINING_EPOCHS = 5000
+    NUMBER_OF_TRAINING_EPOCHS = 7500
 
     # Process the data before feeding it into the Classifier
     def process_data(self, data, family):
@@ -453,19 +450,14 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     def __init__(self):
         print('[INFO] NeuralNetworkClassificationEngine Initialization: Bringing things up...')
         # The path to the dataset file
-        data_file = 'datasets/housing.csv'
+        data_file = 'datasets/link.xlsx'
         # The memory of the data processor
         self.data_processor_memory = {}
         # The feature vocabulary mapping
         self.feature_vocabulary_mapping = {}
         try:
             # Read the dataset
-            self.dataframe = pandas.read_csv(data_file)
-            # Rename the columns for aesthetics
-            self.dataframe.columns = ['Age', 'Job', 'Marital-Status',
-                                      'Education', 'Default', 'Balance',
-                                      'Housing', 'Loan', 'Contact', 'Day', 'Month',
-                                      'Duration', 'Campaign', 'PayDays', 'Previous', 'Paid-Outcome', 'Class']
+            self.dataframe = pandas.read_excel(data_file)
             # The call to the parent
             ClassificationTask.__init__(self,
                                         self.TASK_ID,
@@ -489,9 +481,9 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
 
             # Processing the input features to make them compatible with the Classification Engine
             for feature_column in features.columns:
-                # Change the data-type of this column [dtype = numpy.int64] for normalization
-                if isinstance(features[feature_column][0], numpy.int64):
-                    features[feature_column] = features[feature_column].astype(numpy.float)
+                # # Change the data-type of this column [dtype = numpy.int64] for normalization
+                # if isinstance(features[feature_column][0], numpy.int64):
+                #     features[feature_column] = features[feature_column].astype(numpy.float)
                 internal_proc_counter = 0.0
                 for i in range(len(features[feature_column])):
                     internal_proc_counter += 1.0
@@ -522,7 +514,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
 
                 # A simple conditional within an outer example iterator
                 labels[j] = (lambda: 0,
-                             lambda: 1)[labels[j].strip() == 'yes']()
+                             lambda: 1)[labels[j].strip() == 'up']()
             split = math.floor(len(features) * self.TRAINING_SPLIT)
             # The training data
             self.training_features, self.training_labels = features[:split], labels[:split]
@@ -577,8 +569,6 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                 # The hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_2,
                                               activation=tensorflow.nn.relu),
-                # A Hinton Dropout layer for regularization
-                tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
                 # The output layer
                 tensorflow.keras.layers.Dense(units=1,
                                               activation=tensorflow.nn.sigmoid)
@@ -665,11 +655,11 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
 # This class describes the procedure to provide intuitive, interpretable explanations for the predictions made by a...
 # ...Black Box Deep Learning models for binary classification tasks.
 # This rationale engine is model agnostic.
-class PredictionRationaleEngine(object):
+class LinkFailureCausationAnalyzer(object):
 
     # The initialization sequence
     def __init__(self):
-        print('[INFO] PredictionRationaleEngine Initialization: Bringing things up...')
+        print('[INFO] LinkFailureCausationAnalyzer Initialization: Bringing things up...')
         # The status of this engine
         self.status = False
         # The dimensionality of the locally interpretable model used in the rationale engine
@@ -720,7 +710,7 @@ class PredictionRationaleEngine(object):
         if self.optimizer.status:
             # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
             for classifier_id, classifier in self.classifiers_under_analysis:
-                print('[DEBUG] PredictionRationaleEngine Initialization: Analyzing the predictions of {} '
+                print('[DEBUG] LinkFailureCausationAnalyzer Initialization: Analyzing the predictions of {} '
                       'which is a {}'.format(classifier_id,
                                              classifier.__class__.__name__))
                 classifier_status = \
@@ -732,20 +722,20 @@ class PredictionRationaleEngine(object):
                     explanation = self.get_interpretable_explanation(classifier)
                     if explanation is None:
                         print(
-                            '[ERROR] PredictionRationaleEngine Explanation: Something went wrong while developing '
+                            '[ERROR] LinkFailureCausationAnalyzer Explanation: Something went wrong while developing '
                             'the interpretation. Please refer to the earlier logs for more information '
                             'on what went wrong!')
-                    print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
+                    print('[INFO] LinkFailureCausationAnalyzer Explanation: The locally interpretable explanation '
                           'for the classifier [{}] is described by [{}].'.format(classifier.__class__.__name__,
                                                                                  explanation.features))
-                print('[INFO] PredictionRationaleEngine Initialization: '
+                print('[INFO] LinkFailureCausationAnalyzer Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
             self.status = True
-            print('[INFO] PredictionRationaleEngine Initialization: '
+            print('[INFO] LinkFailureCausationAnalyzer Initialization: '
                   'All registered classifiers have been tagged and their prediction rationales have been explained. '
                   'Final status: [{}]'.format(self.status))
         else:
-            print('[ERROR] PredictionRationaleEngine Initialization: Failure during initialization. '
+            print('[ERROR] LinkFailureCausationAnalyzer Initialization: Failure during initialization. '
                   'Please refer to the earlier logs for more information on what went wrong!')
 
     # Get weights using the exponential family of kernels based on a cosine similarity distance metric
@@ -767,7 +757,7 @@ class PredictionRationaleEngine(object):
                                                                self.instance_under_analysis)
         # It is a contract between the data processing entity and this engine that the columns in the dataset be...
         # structured in the standard way, i.e. having all the features to the left of the label in the dataframe
-        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample '
+        print('[INFO] LinkFailureCausationAnalyzer get_interpretable_explanation: Sample '
               'instance under rationale analysis - '
               '\nFeatures = \n{} and '
               '\nTrue Label = {}'.format(tabulate(classifier.dataframe.loc[[sample_index]][
@@ -780,18 +770,19 @@ class PredictionRationaleEngine(object):
                                                                                         0]
                                          )
               )
-        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample normalized prediction instance '
-              'under rationale analysis - '
-              '\nFeatures = \n{} and '
-              '\nPredicted Label = {}'.format(tabulate(features,
-                                                       headers='keys',
-                                                       tablefmt='psql'),
-                                              (lambda: 0,
-                                               # Conversion to a list is done to avoid the numpy.bool DeprecationWarning
-                                               lambda: 1)[
-                                                  label.tolist()[0][0] > 0.5]()
-                                              )
-              )
+        print(
+            '[INFO] LinkFailureCausationAnalyzer get_interpretable_explanation: Sample normalized prediction instance '
+            'under rationale analysis - '
+            '\nFeatures = \n{} and '
+            '\nPredicted Label = {}'.format(tabulate(features,
+                                                     headers='keys',
+                                                     tablefmt='psql'),
+                                            (lambda: 0,
+                                             # Conversion to a list is done to avoid the numpy.bool DeprecationWarning
+                                             lambda: 1)[
+                                                label.tolist()[0][0] > 0.5]()
+                                            )
+        )
         # All possible combinations of the features under analysis, n=#global_features, r=#local_interpretable_features
         all_possible_feature_family_combinations = [k for k in itertools.combinations(features_under_analysis,
                                                                                       self.interpretable_features_count
@@ -845,7 +836,7 @@ class PredictionRationaleEngine(object):
             model_output = self.optimizer.optimize(None)
             if model_output[0] is False:
                 print(
-                    '[ERROR] PredictionRationaleEngine get_interpretable_explanation: Something went wrong during '
+                    '[ERROR] LinkFailureCausationAnalyzer get_interpretable_explanation: Something went wrong during '
                     'optimization. Please refer to the earlier logs for more information on what went wrong!')
                 return None
             model_results_collection.append(self.model_results(features=feature_family_tuple,
@@ -860,7 +851,7 @@ class PredictionRationaleEngine(object):
                                  routine='get_interpretable_explanation',
                                  key='Analyzing locally interpretable linear models: '
                                      'Completed model analysis for {}'.format(feature_family_tuple))
-        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: '
+        print('[INFO] LinkFailureCausationAnalyzer get_interpretable_explanation: '
               'Completed locally interpretable linear model analyses for all possible '
               'feature family tuples of length {}. '
               'Finding the best explanation among these analyzed models...'.format(self.interpretable_features_count))
@@ -879,7 +870,7 @@ class PredictionRationaleEngine(object):
     # Evaluate the gradient of the cost function / loss at the current point $\mathbb{R}^{\kappa}$
     def evaluate_gradients(self, parameter_vector, dimensionality):
         if dimensionality is not self.dimensionality:
-            raise NotImplementedError('[ERROR] PredictionRationaleEngine evaluate_gradients: '
+            raise NotImplementedError('[ERROR] LinkFailureCausationAnalyzer evaluate_gradients: '
                                       'Gradient Evaluation for models with dimension not equal to [{}] is not '
                                       'currently supported. Please check back later!'.format(self.dimensionality))
         gradient = [k - k for k in range(len(parameter_vector))]
@@ -893,27 +884,27 @@ class PredictionRationaleEngine(object):
 
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb):
-        print('[INFO] PredictionRationaleEngine Termination: Tearing things down...')
+        print('[INFO] LinkFailureCausationAnalyzer Termination: Tearing things down...')
 
 
 # Run Trigger
 if __name__ == '__main__':
-    print('[INFO] PredictionRationaleEngine Trigger: Starting system assessment!')
+    print('[INFO] LinkFailureCausationAnalyzer Trigger: Starting system assessment!')
     # This is one example of a classification engine suitable for use in this environment
     nnClassifier = NeuralNetworkClassificationEngine()
     # NeuralNetworkClassificationEngine SUCCESS
     if nnClassifier.status:
         # Analyze the rationale behind the predictions made by this engine
-        rationaleEngine = PredictionRationaleEngine()
-        # PredictionRationaleEngine SUCCESS
-        if rationaleEngine.status:
-            print('[INFO] PredictionRationaleEngine Trigger: Prediction Rationale Analysis is Successful!')
-        # PredictionRationaleEngine FAILURE
+        causationAnalyzer = LinkFailureCausationAnalyzer()
+        # LinkFailureCausationAnalyzer SUCCESS
+        if causationAnalyzer.status:
+            print('[INFO] LinkFailureCausationAnalyzer Trigger: Prediction Rationale Analysis is Successful!')
+        # LinkFailureCausationAnalyzer FAILURE
         else:
-            print('ERROR] PredictionRationaleEngine Trigger: Prediction Rationale Analysis Failed! '
-                  'Something went wrong during the initialization of {}'.format(PredictionRationaleEngine.__name__))
-        print('[INFO] PredictionRationaleEngine Trigger: System assessment has been completed!')
+            print('ERROR] LinkFailureCausationAnalyzer Trigger: Prediction Rationale Analysis Failed! '
+                  'Something went wrong during the initialization of {}'.format(LinkFailureCausationAnalyzer.__name__))
+        print('[INFO] LinkFailureCausationAnalyzer Trigger: System assessment has been completed!')
     # NeuralNetworkClassificationEngine FAILURE
     else:
-        print('[ERROR] PredictionRationaleEngine Trigger: Something went wrong during the initialization '
+        print('[ERROR] LinkFailureCausationAnalyzer Trigger: Something went wrong during the initialization '
               'of {}'.format(NeuralNetworkClassificationEngine.__name__))

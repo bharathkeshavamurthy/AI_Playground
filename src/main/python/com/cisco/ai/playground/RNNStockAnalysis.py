@@ -72,10 +72,10 @@ class RNNStockAnalysis(object):
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of training epochs
-    NUMBER_OF_TRAINING_EPOCHS = 3000
+    NUMBER_OF_TRAINING_EPOCHS = 2000
 
     # The checkpoint trigger factor
-    CHECKPOINT_TRIGGER_FACTOR = 100
+    CHECKPOINT_TRIGGER_FACTOR = 200
 
     # The number of RNN units
     NUMBER_OF_RNN_UNITS = 5200
@@ -244,7 +244,7 @@ class RNNStockAnalysis(object):
             checkpoint_callback = tensorflow.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_prefix,
                                                                              monitor='loss',
                                                                              save_weights_only=True,
-                                                                             save_best_only=True,
+                                                                             save_best_only=False,
                                                                              verbose=1,
                                                                              mode='min',
                                                                              period=self.CHECKPOINT_TRIGGER_FACTOR)
