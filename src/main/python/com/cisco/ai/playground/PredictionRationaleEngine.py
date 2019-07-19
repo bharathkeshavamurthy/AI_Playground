@@ -729,15 +729,23 @@ class PredictionRationaleEngine(object):
                 if classifier_status:
                     self.competent_classifiers.append(classifier)
                     # Start the explanation sequence
-                    explanation = self.get_interpretable_explanation(classifier)
-                    if explanation is None:
+                    ranked_models = self.get_interpretable_explanation(classifier)
+                    if ranked_models is None or len(ranked_models) == 0:
                         print(
                             '[ERROR] PredictionRationaleEngine Explanation: Something went wrong while developing '
                             'the interpretation. Please refer to the earlier logs for more information '
                             'on what went wrong!')
+                        # Additional enforcement
+                        classifier_status = False
                     print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
                           'for the classifier [{}] is described by [{}].'.format(classifier.__class__.__name__,
-                                                                                 explanation.features))
+                                                                                 ranked_models[0].features))
+                    print('[INFO] PredictionRationaleEngine Explanation: The models are ranked in the increasing order '
+                          'of their converged loss function values below.')
+                    # Print the models in the increasing order of their loss function values
+                    for i in range(len(ranked_models)):
+                        print('{}. {}'.format(str(i + 1),
+                                              ranked_models[i].features))
                 print('[INFO] PredictionRationaleEngine Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
             self.status = True
@@ -863,12 +871,12 @@ class PredictionRationaleEngine(object):
                                  routine='get_interpretable_explanation',
                                  key='Analyzing locally interpretable linear models: '
                                      'Completed model analysis for {}'.format(feature_family_tuple))
-        print('[INFO] PredictionRationaleEngine get_interpretable_explanation: '
+        print('\n[INFO] PredictionRationaleEngine get_interpretable_explanation: '
               'Completed locally interpretable linear model analyses for all possible '
               'feature family tuples of length {}. '
               'Finding the best explanation among these analyzed models...'.format(self.interpretable_features_count))
-        best_model = min(model_results_collection, key=lambda x: x.loss)
-        return best_model
+        ranked_models = sorted(model_results_collection, key=lambda x: x.loss)
+        return ranked_models
 
     # Evaluate the cost function / loss at the current point in $\mathbb{R}^{\kappa}$
     def evaluate_loss(self, parameter_vector):
