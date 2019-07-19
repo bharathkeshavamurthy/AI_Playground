@@ -15,7 +15,7 @@ import numpy
 import random
 import tflearn
 import tensorflow
-from gym import wrappers
+# from gym import wrappers
 from collections import deque
 
 
@@ -367,9 +367,9 @@ class Pendulum(object):
             self.exploration_noise = Noise(_x0=None,
                                            _mu=numpy.zeros(self.action_dimension))
             # Enable monitoring and rendering of the environment reactions and the feedback process
-            self.environment = wrappers.Monitor(self.environment,
-                                                self.monitor_directory,
-                                                force=True)
+            # self.environment = wrappers.Monitor(self.environment,
+            #                                     self.monitor_directory,
+            #                                     force=True)
             # Start the Actor-Critic DDPG with Experiential Replay process
             self.train(session)
             # Stop the monitoring and rendering services
@@ -399,7 +399,7 @@ class Pendulum(object):
             episodic_reward = 0.0
             episodic_average_max_q_value = 0.0
             for iteration in range(self.ITERATIONS_PER_EPISODE):
-                self.environment.render()
+                # self.environment.render()
                 action = self.actor.predict(numpy.reshape(state, (1, self.state_dimension))) + self.exploration_noise()
                 next_state, reward, termination, metadata = self.environment.step(action[0])
                 replay_memory.remember(numpy.reshape(state, (self.state_dimension,)),

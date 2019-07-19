@@ -826,8 +826,11 @@ class PredictionRationaleEngine(object):
                     # Standard Normalization technique 1 - Sample from the vocabulary
                     # Standard Normalization technique 2 - Subtract the family mean from the value
                     # Standard Normalization technique 3 - Divide by the standard deviation of the family
-                    perturbed_value = (((random.sample(list(family_values.values()),
-                                                       1)[0]) - family_mean) / family_std)
+                    if family_std != 0.0:
+                        perturbed_value = (((random.sample(list(family_values.values()),
+                                                           1)[0]) - family_mean) / family_std)
+                    else:
+                        perturbed_value = random.sample(list(family_values.values()), 1)[0]
                     perturbed_sample.features[feature_family] = perturbed_value
                     baremetal_perturbed_sample.features.append(perturbed_value)
                 # The target

@@ -1065,7 +1065,10 @@ class Artemis(object):
             # Decay the exploration factor and employ the well-known $\epsilon-greedy$ logic
             self.decay()
             if numpy.random.rand() <= self.exploration_factor:
-                return numpy.random.random_sample(self.action_dimension)
+                return numpy.reshape(numpy.random.random_sample(self.action_dimension),
+                                     newshape=(1,
+                                               1,
+                                               self.action_dimension))
             return action
         # ORNSTEIN_UHLENBECK_NOISE
         if self.exploration_strategy == ExplorationStrategy.ORNSTEIN_UHLENBECK_NOISE:
@@ -1327,7 +1330,7 @@ class Apollo(object):
                         # Mutex release
                         caerus.release()
                         # Sleep for some time for Ares to catch up
-                        time.sleep(1.0)
+                        time.sleep(10.0)
                         # Validation - exit if invalid
                         if feedback is None or self.utilities.custom_instance_validation(feedback,
                                                                                          FEEDBACK) is False:
@@ -1460,54 +1463,76 @@ class Ares(object):
     # Populate the "packet_drop_count" field per queue per port in the environment's state variable
     def start(self):
         print('[INFO] Ares start: Acquiring the mutex and analyzing the state of the switch environment...')
-        caerus.acquire()
         try:
+            # TODO: The code looks and seems childish: Clean it up...
             # The switch should be up and running
-            if self.nexus.shutdown is False:
+            # Change Log: Loop control for the timer logic included in-house
+            while True:
+                caerus.acquire()
                 for p in range(self.nexus.number_of_ports):
                     for q in range(self.nexus.number_of_queues_per_port):
-                        # Model the arrival process
-                        # Don't set a seed here - let's analyze the operation across multiple inconsistent runs...
-                        # TODO: Do we need a see here...do we need consistency?
-                        arrival_count = 0
+                        # Check if the switch is up...
+                        if self.nexus.shutdown:
+                            print('[ERROR] Ares start: The Nexus environment is no longer available to receive packets')
+                            break
+                        # New Arrivals
                         arrival_times = []
                         # Inverse Transform: Generation of exponential inter-arrival times from...
                         # ...a uniform random variable
                         arrival_time = (-numpy.log(numpy.random.random_sample())) / self.arrival_rates[p][q]
                         # Per second arrival rate - this is fixed (\lambda_{pq} is the arrival rate [per second])
                         while arrival_time <= 1.0:
-                            arrival_count += 1
                             arrival_times.append(arrival_time)
                             arrival_time += (-numpy.log(numpy.random.random_sample())) / self.arrival_rates[p][q]
-                        pending = self.pending_packets[p][q] + len(arrival_times)
-                        # Model the service process
-                        # Don't set a seed here - let's analyze the operation across multiple inconsistent runs...
-                        # TODO: Do we need a see here...do we need consistency?
-                        service_times = (-numpy.log(numpy.random.random_sample(pending))) / self.service_rates[p][q]
-                        localized_run_time = 0
-                        for packet in range(pending):
-                            localized_run_time += service_times[packet]
-                            if localized_run_time <= 1.0:
-                                pending -= 1
+                        allocated = self.nexus.get_state().ports[p].queues[q].allocated_buffer_units
+                        # Pending packets
+                        pending = self.pending_packets[p][q]
+                        # No allocated units for this queue...
+                        if allocated == 0:
+                            self.nexus.get_state().ports[p].queues[q].packet_drop_count = pending + len(arrival_times)
+                            self.pending_packets[p][q] = 0
+                            continue
+                        # Less allocated space than what was previously pending...
+                        elif allocated < pending:
+                            free = 0
+                            dropped = pending - allocated
+                        # The allocated space is greater than or equal to what was previously pending...
+                        else:
+                            free = allocated - pending
+                            dropped = 0
+                        # Start simulating the queueing process with arrivals and departures...
+                        pending_run_time = 0.0
+                        # Previous checkpoint for arrival analysis
+                        previous_time_checkpoint = 0.0
+                        while pending != 0:
+                            # Inverse-Transform method: Generation of exponential service times
+                            pending_run_time += (-numpy.log(
+                                numpy.random.random_sample())) / self.service_rates[p][q]
+                            # Are you still in this window?
+                            if pending_run_time <= 1.0:
+                                free += 1
+                                # Current checkpoint for arrival analysis
+                                current_time_checkpoint = pending_run_time
+                                for arrival in range(len(arrival_times)):
+                                    if previous_time_checkpoint < arrival_times[arrival] < current_time_checkpoint:
+                                        if free > 0:
+                                            free -= 1
+                                        else:
+                                            dropped += 1
+                                previous_time_checkpoint = current_time_checkpoint
+                                pending = allocated - free
                             else:
                                 break
-                        dropped = 0
-                        allocated = self.nexus.get_state().ports[p].queues[q].allocated_buffer_units
-                        # Update the pending count based on the current allocation
-                        if allocated < pending:
-                            dropped = pending - allocated
-                            self.pending_packets[p][q] = allocated
-                        else:
-                            self.pending_packets[p][q] = pending
-                        # Update the drop count
                         self.nexus.get_state().ports[p].queues[q].packet_drop_count = dropped
+                        self.pending_packets[p][q] = allocated - free
+                # Change Log: Sleep for 1 second before pumping packets and simulating the queueing system
+                # Release the mutex
+                caerus.release()
+                time.sleep(1.0)
         except Exception as exception:
             print('[ERROR] Ares start: Exception caught while simulating packet arrival and '
                   'analyzing switch performance - [{}]'.format(exception))
             traceback.print_tb(exception.__traceback__)
-        finally:
-            # Release the mutex
-            caerus.release()
         # Ares analysis has been completed...
 
     # The termination sequence
@@ -1529,7 +1554,7 @@ if __name__ == '__main__':
                   number_of_queues_per_port,
                   global_pool_size,
                   dedicated_pool_size_per_port)
-    action_dimension = nexus.get_action_iterable()
+    action_dimension = len(nexus.get_action_iterable())
     if action_dimension is None:
         print('[ERROR] AdaptiveBufferIntelligence Trigger: Something went wrong while obtaining the action dimension '
               'from Nexus. Please refer to the earlier logs for more details on this error. Exiting!')
@@ -1560,9 +1585,9 @@ if __name__ == '__main__':
         # We're actually using an Exploration Decay based exploration strategy here...
         exploration_strategy=ExplorationStrategy.EXPLORATION_DECAY,
         action_dimension=action_dimension,
-        exploration_factor=None,
-        exploration_decay=None,
-        exploration_factor_min=None,
+        exploration_factor=1.0,
+        exploration_decay=0.6,
+        exploration_factor_min=0.001,
         # Ornstein-Uhlenbeck Exploration Noise: Populated the default parameters even though they're not essential...
         # ...in this use case
         x0=None,
@@ -1599,10 +1624,15 @@ if __name__ == '__main__':
 
     # The timer interval for Cronus controlling Ares - fix this to 1.0
     timer_interval = 1.0
+
     # Create a timer thread for Ares initialized with Nexus and start the evaluation thread
     # Change Log: A thread only for Ares - Apollo will be the main thread
+    # Change Log: No timer thread for Ares - handle loop within start() of Ares
+
     ares = Ares(nexus)
-    cronus_thread = threading.Timer(timer_interval, ares.start)
+    cronus_thread = threading.Thread(target=ares.start)
+
+    # cronus_thread = threading.Timer(timer_interval, ares.start)
 
     # Create individual threads for Ares (cronus_thread) and Apollo (apollo_thread)
     # cronus_thread = threading.Timer(timer_interval, ares.start)
@@ -1612,7 +1642,7 @@ if __name__ == '__main__':
     # Start the Ares and Apollo threads
     cronus_thread.start()
     print('[INFO] AdaptiveBufferIntelligence Trigger: Joining all spawned threads...')
-    # Join the threads upon completion - Integrate with the [main] thread
+    # Join the apollo thread upon completion - Integrate with the [main] thread and cancel the timer
     apollo_thread.join()
     cronus_thread.join()
     print('[INFO] AdaptiveBufferIntelligence Trigger: Completed system assessment...')

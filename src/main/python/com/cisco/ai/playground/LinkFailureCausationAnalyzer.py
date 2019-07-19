@@ -419,7 +419,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     BATCH_SIZE = 64
 
     # The number of epochs to train the model
-    NUMBER_OF_TRAINING_EPOCHS = 7500
+    NUMBER_OF_TRAINING_EPOCHS = 10
 
     # Process the data before feeding it into the Classifier
     def process_data(self, data, family):
@@ -612,7 +612,6 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             # Standard Training
             self.model.fit(self.training_features,
                            self.training_labels,
-                           batch_size=self.BATCH_SIZE,
                            epochs=self.NUMBER_OF_TRAINING_EPOCHS,
                            verbose=1)
             return True
@@ -817,8 +816,11 @@ class LinkFailureCausationAnalyzer(object):
                     # Standard Normalization technique 1 - Sample from the vocabulary
                     # Standard Normalization technique 2 - Subtract the family mean from the value
                     # Standard Normalization technique 3 - Divide by the standard deviation of the family
-                    perturbed_value = (((random.sample(list(family_values.values()),
-                                                       1)[0]) - family_mean) / family_std)
+                    if family_std != 0.0:
+                        perturbed_value = (((random.sample(list(family_values.values()),
+                                                           1)[0]) - family_mean) / family_std)
+                    else:
+                        perturbed_value = random.sample(list(family_values.values()), 1)[0]
                     perturbed_sample.features[feature_family] = perturbed_value
                     baremetal_perturbed_sample.features.append(perturbed_value)
                 # The target
