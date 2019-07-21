@@ -8,7 +8,7 @@
 
 # TODO: A logging framework instead of all these formatted print statements...
 
-# TODO: A3C:This implementation does not currently make use of multiple workers - Can multiple workers be implemented?
+# TODO: A3C: This implementation does not currently make use of multiple workers - Can multiple workers be implemented?
 
 # The imports
 import math
