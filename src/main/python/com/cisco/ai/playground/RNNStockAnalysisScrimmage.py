@@ -1,35 +1,53 @@
 # |Bleeding-Edge Productions|
-# This entity encapsulates an intelligent model to predict the stock prices of a company using RNNs in TensorFlow
-# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ]
-# Use a historical context of 3 months to predict the stock prices 5 days (a week) into the future
-# Scrimmage variant
-# Author: Bharath Keshavamurthy
-# Organization: CISCO Systems, Inc.
+# This entity encapsulates an intelligent model to predict the stock prices of a company using RNNs in TensorFlow.
+# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ].
+# Use a historical context of 3 months to predict the stock prices 10 days (two weeks) into the future.
+# ------------------------------------------Scrimmage variant-----------------------------------------------------------
+# Author: Bharath Keshavamurthy {bkeshava}
+# Organization: DC NX-OS, CISCO Systems Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
-# TODO: A logging framework instead of all these formatted print statements...
+# TODO: A logging framework instead of all these formatted print statements
+
+"""
+Change Log - 23-July-2019:
+@author: Bharath Keshavamurthy <bkeshava at cisco dot com>
+
+1. Adding an additional RNN layer for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 5200
+                                                                     b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 3900
+
+TODO: Next Release [19.08] -
+ 2. Deprecating the context window because temporal correlation beyond a one-step look-back MAY be affected by the
+     shuffling operation in the pre-processing routine
+
+3. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
+
+TODO: Next Release [19.08]
+ 4. Changing the embedding size to 3900 from 2600 for better lower-dimensional representation for the vocab of size 9900
+"""
 
 # The imports
 import numpy
 import plotly
-# import traceback
+import traceback
 import functools
 import tensorflow
 import pandas as pd
 import plotly.graph_objs as go
 from collections import namedtuple
 
-# Enable Eager Execution for conversions between Tensors and Numpy arrays
+# Enable Eager Execution for conversions between tensors and numpy arrays
 tensorflow.enable_eager_execution()
 
 # Plotly user account credentials for visualization
-plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPiEW5S')
+plotly.tools.set_credentials_file(username='bkeshava',
+                                  api_key='RHqYrDdThygiJEPiEW5S')
 
 
 # This class predicts the closing stock price of a company leveraging capabilities of RNNs in the...
 # ...high-level Keras API within TensorFlow
 # Inspired by Language Modelling
-# Scrimmage - Load weights from the checkpoints created by the OG's run and make predictions
+# Scrimmage variant - Load weights from the checkpoints created by the OG's run and make predictions
 class RNNStockAnalysisScrimmage(object):
     # The column key for the date attribute
     DATE_COLUMN_KEY = 'Date'
@@ -39,17 +57,21 @@ class RNNStockAnalysisScrimmage(object):
 
     # Batch size
     # This seems to be the best mini_batch_size for injecting the appropriate amount of noise into the SGD process...
-    # ...in order to prevent it from settling down at a saddle point. Furthermore, we can better leverage the...
-    # ...parallel CUDA capabilities of the NVIDIA GPU if mini_batch_size > 32.
-    BATCH_SIZE = 65
+    # ...in order to prevent it from settling down at a saddle point.
+    # Furthermore, we can better leverage the CUDA capabilities of the NVIDIA GPU if mini_batch_size > 32.
+    # Everything constitutes one batch leading to one step per epoch.
+    BATCH_SIZE = 105
 
     # (1 - DROPOUT_RATE)
     # The keep probability for Hinton Dropout
-    # Dropout Factor = 0.2
+    # Dropout Factor: 0.2
     # KEEP_PROBABILITY = 0.8
 
     # The pragmatic limits of the stock price in USD
-    PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
+    PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits',
+                                              ['lower_limit',
+                                               'upper_limit',
+                                               'precision'])
 
     # The length of the look-back context
     # A lookback context length of 65 days (3 months of look-back = (4 + 4 + 5) weeks * 5 days per week = 65 days)
@@ -67,8 +89,14 @@ class RNNStockAnalysisScrimmage(object):
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
 
-    # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 5200
+    # The number of units in the first RNN layer
+    NUMBER_OF_RNN_UNITS_1 = 5200
+
+    # The number of units in the second RNN layer
+    NUMBER_OF_RNN_UNITS_2 = 3900
+
+    # The number of units in the third RNN layer
+    # NUMBER_OF_RNN_UNITS_3 = 2600
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6955
@@ -82,7 +110,7 @@ class RNNStockAnalysisScrimmage(object):
     PRECISION = 0.01
 
     # Prediction randomness coefficient
-    # This is called temperature in language modelling
+    # This is called 'Temperature' in language modelling
     CHAOS_COEFFICIENT = 0.10
 
     # The initialization sequence
@@ -116,7 +144,7 @@ class RNNStockAnalysisScrimmage(object):
         self.dates = dataframe[self.DATE_COLUMN_KEY]
         self.stock_prices = dataframe[self.CLOSING_STOCK_PRICE_COLUMN_KEY].apply(
             lambda x: round(x, precision_cutoff))
-        # Visualize the stock market trends for CISCO over time
+        # Visualize the stock market trends for the given company (Stock_Exchange ticker) over time
         initial_visualization_trace = go.Scatter(x=self.dates,
                                                  y=self.stock_prices.values,
                                                  mode=self.PLOTLY_SCATTER_MODE)
@@ -149,32 +177,57 @@ class RNNStockAnalysisScrimmage(object):
     def build_model(self, initial_build=True, batch_size=None):
         try:
             batch_size = (lambda: self.BATCH_SIZE, lambda: batch_size)[initial_build is False]()
+
             # GPU - CuDNNGRU: The NVIDIA Compute Unified Device Architecture (CUDA) based Deep Neural Network library...
-            # ... is a GPU accelerated library of primitives for Deep Neural Networks. CuDNNGRU is a fast GRU impl...
-            # within the CuDNN framework.
+            # ... is a GPU accelerated library of primitives for Deep Neural Networks.
+            # CuDNNGRU is a fast GRU impl within the CuDNN framework.
+
             # CPU - Develop a modified RNN layer by using functools.partial
+
             custom_gru = (lambda: functools.partial(tensorflow.keras.layers.GRU,
                                                     recurrent_activation='sigmoid'),
                           lambda: tensorflow.keras.layers.CuDNNGRU)[self.gpu_availability]()
+
             # Construct the model sequentially
             model = tensorflow.keras.Sequential([
                 # The Embedding Layer
-                # Project the contextual vector onto a dense, continuous vector space
+                # Project the contextual vector onto a dense, lower-dimensional continuous vector space
                 tensorflow.keras.layers.Embedding(len(self.available_vocabulary),
                                                   self.PROJECTED_VECTOR_SIZE,
                                                   batch_input_shape=[batch_size,
                                                                      None]),
-                # The Recurrent Neural Network - use GRU or LSTM units
-                # GRUs are used here because structurally they're simpler and hence take smaller training times
-                # Also, they don't have a forget gate in them, so they expose the entire memory during their operation
-                custom_gru(self.NUMBER_OF_RNN_UNITS,
+                # The Recurrent Neural Network layers - use GRU or LSTM units
+                # GRUs are used here because structurally they're simpler and hence take smaller training times.
+                # Also, they don't have a forget gate in them, so they expose the entire memory during their operation.
+                # RNN Layer 1
+                custom_gru(self.NUMBER_OF_RNN_UNITS_1,
                            return_sequences=True,
                            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
-                           # ...uniformly from (-sqrt(6 / (fan_in + fan_out)), sqrt(6 / (fan_in + fan_out)))
+                           # ...uniformly from...
+                           # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
                            recurrent_initializer='glorot_uniform',
                            stateful=True),
+                # RNN Layer 2
+                custom_gru(self.NUMBER_OF_RNN_UNITS_2,
+                           return_sequences=True,
+                           # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                           # ...uniformly from...
+                           # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                           recurrent_initializer='glorot_uniform',
+                           stateful=True),
+
+                # RNN Layer 3
+                # custom_gru(self.NUMBER_OF_RNN_UNITS_3,
+                #            return_sequences=True,
+                #            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                #            # ...uniformly from...
+                #            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                #            recurrent_initializer='glorot_uniform',
+                #            stateful=True),
+
                 # The Hinton dropout layer
                 # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
+
                 # The fully connected neural network
                 # A classification-type output onto the vocabulary
                 tensorflow.keras.layers.Dense(len(self.available_vocabulary))
@@ -187,14 +240,14 @@ class RNNStockAnalysisScrimmage(object):
         except Exception as e:
             print('[ERROR] RNNStockAnalysisScrimmage build: Exception caught while building the model - {}'.format(e))
             # Detailed stack trace
-            # traceback.print_tb(e.__traceback__)
+            traceback.print_tb(e.__traceback__)
             return False, None
 
     # Predict the next ${LOOK_AHEAD_SIZE} stock prices
     def predict(self):
         # The output to be returned
         predicted_prices = []
-        # GPU Availability - Check again
+        # GPU Availability - Check again in case something took up the discrete graphics capabilities of the machine
         self.gpu_availability = tensorflow.test.is_gpu_available()
         print('[INFO] RNNStockAnalysisScrimmage Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
         # Modify the model for a batch size of 1
@@ -204,8 +257,10 @@ class RNNStockAnalysisScrimmage(object):
             print('[ERROR] RNNStockAnalysisScrimmage predict: The operation failed due to previous errors!')
             return
         try:
+            # Dynamic TODO: Modify the checkpoint to be loaded in this Scrimmage variant
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
-            modified_model.build(tensorflow.TensorShape([1, None]))
+            modified_model.build(tensorflow.TensorShape([1,
+                                                         None]))
             # The tail-end look-back context for the initial look-ahead prediction
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
             # ... of the test dataset
@@ -214,23 +269,27 @@ class RNNStockAnalysisScrimmage(object):
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
-                trigger = tensorflow.expand_dims(cumulative_context, 0)
+                trigger = tensorflow.expand_dims(cumulative_context,
+                                                 0)
                 prediction = modified_model(trigger)
                 # Remove the useless dimension
                 prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
-                predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
+                predicted_price = tensorflow.multinomial(prediction,
+                                                         num_samples=1)[-1, 0].numpy()
                 # Append the predicted value to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
                 # Context modification logic
                 # Add the predicted price to the context which would be used for the next iteration
-                cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
+                cumulative_context = numpy.append(cumulative_context,
+                                                  [predicted_price],
+                                                  axis=0)
                 # Move the context window to include the latest prediction and discount the oldest contextual element
                 cumulative_context = cumulative_context[1:]
         except Exception as e:
             print('[ERROR] RNNStockAnalysisScrimmage predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
-            # traceback.print_tb(e.__traceback__)
+            traceback.print_tb(e.__traceback__)
         return predicted_prices
 
     # The termination sequence
@@ -254,7 +313,8 @@ def visualize_predictions(obj, _true_values, _predicted_values):
                                        'test data set',
                                  xaxis=dict(title='Time'),
                                  yaxis=dict(title='Closing Stock Price'))
-    final_analysis_figure = dict(data=[real_final_analysis_trace, generated_final_analysis_trace],
+    final_analysis_figure = dict(data=[real_final_analysis_trace,
+                                       generated_final_analysis_trace],
                                  layout=final_analysis_layout)
     final_analysis_url = plotly.plotly.plot(final_analysis_figure,
                                             filename='Prediction_Analysis_Test_Dataset')

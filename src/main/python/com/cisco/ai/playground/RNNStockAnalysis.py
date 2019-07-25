@@ -1,30 +1,65 @@
 # |Bleeding-Edge Productions|
-# This entity encapsulates an intelligent model to predict the stock prices of a company using RNNs in TensorFlow
-# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ]
-# Use a historical context of 3 months to predict the stock prices 5 days (a week) into the future
-# Author: Bharath Keshavamurthy
-# Organization: CISCO Systems, Inc.
+# This entity encapsulates an intelligent model to predict the stock prices of a company using RNNs in TensorFlow.
+# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ].
+# Use a historical context of 3 months to predict the stock prices 10 days (two weeks) into the future.
+# Author: Bharath Keshavamurthy {bkeshava}
+# Organization: DC NX-OS, CISCO Systems Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
-# TODO: A logging framework instead of all these formatted print statements...
+# TODO: A logging framework instead of all these formatted print statements
+
+# The good thing I'm seeing in this variant is the similarity between the cost progression and ...
+# ...the epoch_sparse_categorical_cross_entropy metric's progression
+
+"""
+Change Log - 23-July-2019:
+@author: Bharath Keshavamurthy <bkeshava at cisco dot com>
+
+1. NUMBER_OF_TRAINING_EPOCHS = 30000 [Extended training for convergence analysis - is it the global optimum?]
+{The number of epochs is huge because the steps_per_epoch is small}
+{I'm hoping I'm injecting sufficient noise in this extended convergence analysis process to prevent the algorithm
+  from settling down in saddle points and local optima}
+
+2. CHECKPOINT_TRIGGER_FACTOR = 3000 [Inline with the modified member - NUMBER_OF_TRAINING_EPOCHS]
+{Fostering a compromise - a treaty between the limited storage on board the training machine and checkpoint diversity}
+
+3. Adding an additional RNN layer for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 5200
+                                                                     b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 3900
+
+4. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
+
+5. Adding a new hyper-parameter BUFFER_SIZE for shuffling the sequences before model training
+
+6. Introducing data shuffling for more randomized training -> one-step look-ahead in sequenced data allows shuffling
+
+TODO: Next Release [19.08] -
+ 7. Deprecating the context window because temporal correlation beyond a one-step look-back MAY be affected by the
+     shuffling operation in the pre-processing routine
+
+8. Modifying the steps_per_epoch field in the model.fit() routine because it was limiting the first time around
+
+TODO: Next Release [19.08]
+ 9. Changing the embedding size to 3900 from 2600 for better lower-dimensional representation for the vocab of size 9900
+"""
 
 # The imports
 import os
 import time
 import numpy
 import plotly
-# import traceback
+import traceback
 import functools
 import tensorflow
 import pandas as pd
 import plotly.graph_objs as go
 from collections import namedtuple
 
-# Enable Eager Execution for conversions between Tensors and Numpy arrays
+# Enable Eager Execution for conversions between tensors and numpy arrays
 tensorflow.enable_eager_execution()
 
 # Plotly user account credentials for visualization
-plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPiEW5S')
+plotly.tools.set_credentials_file(username='bkeshava',
+                                  api_key='RHqYrDdThygiJEPiEW5S')
 
 
 # This class predicts the closing stock price of a company leveraging capabilities of RNNs in the...
@@ -43,17 +78,24 @@ class RNNStockAnalysis(object):
 
     # Batch size
     # This seems to be the best mini_batch_size for injecting the appropriate amount of noise into the SGD process...
-    # ...in order to prevent it from settling down at a saddle point. Furthermore, we can better leverage the...
-    # ...parallel CUDA capabilities of the NVIDIA GPU if mini_batch_size > 32.
-    BATCH_SIZE = 65
+    # ...in order to prevent it from settling down at a saddle point.
+    # Furthermore, we can better leverage the CUDA capabilities of the NVIDIA GPU if mini_batch_size > 32.
+    # Everything constitutes one batch leading to one step per epoch.
+    BATCH_SIZE = 105
+
+    # Size of the buffer used for shuffling the sequences during batching, before model training
+    BUFFER_SIZE = 1050
 
     # (1 - DROPOUT_RATE)
     # The keep probability for Hinton Dropout
-    # Dropout Factor = 0.2
+    # Dropout Factor: 0.2
     # KEEP_PROBABILITY = 0.8
 
     # The pragmatic limits of the stock price in USD
-    PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits', ['lower_limit', 'upper_limit', 'precision'])
+    PRAGMATIC_STOCK_PRICE_LIMITS = namedtuple('Limits',
+                                              ['lower_limit',
+                                               'upper_limit',
+                                               'precision'])
 
     # The length of the look-back context
     # A lookback context length of 65 days (3 months of look-back = (4 + 4 + 5) weeks * 5 days per week = 65 days)
@@ -72,13 +114,19 @@ class RNNStockAnalysis(object):
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of training epochs
-    NUMBER_OF_TRAINING_EPOCHS = 2000
+    NUMBER_OF_TRAINING_EPOCHS = 30000
 
     # The checkpoint trigger factor
-    CHECKPOINT_TRIGGER_FACTOR = 200
+    CHECKPOINT_TRIGGER_FACTOR = 3000
 
-    # The number of RNN units
-    NUMBER_OF_RNN_UNITS = 5200
+    # The number of units in the first RNN layer
+    NUMBER_OF_RNN_UNITS_1 = 5200
+
+    # The number of units in the second RNN layer
+    NUMBER_OF_RNN_UNITS_2 = 3900
+
+    # The number of units in the third RNN layer
+    # NUMBER_OF_RNN_UNITS_3 = 2600
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6955
@@ -92,7 +140,7 @@ class RNNStockAnalysis(object):
     PRECISION = 0.01
 
     # Prediction randomness coefficient
-    # This is called temperature in language modelling
+    # This is called 'Temperature' in language modelling
     CHAOS_COEFFICIENT = 0.10
 
     # The initialization sequence
@@ -130,8 +178,9 @@ class RNNStockAnalysis(object):
         # Extract the attributes
         self.dates = dataframe[self.DATE_COLUMN_KEY]
         self.stock_prices = dataframe[self.CLOSING_STOCK_PRICE_COLUMN_KEY].apply(
-            lambda x: round(x, precision_cutoff))
-        # Visualize the stock market trends for CISCO over time
+            lambda x: round(x,
+                            precision_cutoff))
+        # Visualize the stock market trends for the given company (Stock_Exchange ticker) over time
         initial_visualization_trace = go.Scatter(x=self.dates,
                                                  y=self.stock_prices.values,
                                                  mode=self.PLOTLY_SCATTER_MODE)
@@ -154,15 +203,18 @@ class RNNStockAnalysis(object):
         self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         self.stock_prices_testing = self.stock_prices.values[
                                     self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
-        # Create individual data samples and convert the data into sequences of lookback context length
+        # Create individual data samples and convert the data into sequences of <lookback_context_length>
         # Sequences of length 66 will be created
-        self.batched_data = tensorflow.data.Dataset.from_tensor_slices(self.training_data).batch(
+        self.sequenced_data = tensorflow.data.Dataset.from_tensor_slices(self.training_data).batch(
             self.LOOK_BACK_CONTEXT_LENGTH + 1,
             drop_remainder=True)
         # Split the data into inputs and targets
-        # <Input is of length 65> and <Target is right shifted along the time axis and is of length 65>
-        self.split_dataset = self.batched_data.map(lambda x: (x[:-1], x[1:])).batch(self.BATCH_SIZE,
-                                                                                    drop_remainder=True)
+        # Shuffle the data and generate one batch of size 105 [every available training example in this batch]
+        # <Input is of length 65> and <Target is right shifted by one along the time axis and is of length 65>
+        # As of this variant, everything constitutes one batch
+        self.split_dataset = self.sequenced_data.map(lambda x: (x[:-1], x[1:])).shuffle(
+            self.BUFFER_SIZE).batch(self.BATCH_SIZE,
+                                    drop_remainder=True)
         # The model
         self.model = None
         # GPU Availability
@@ -172,34 +224,59 @@ class RNNStockAnalysis(object):
     # Build the model using RNN layers from Keras
     def build_model(self, initial_build=True, batch_size=None):
         try:
-            batch_size = (lambda: self.BATCH_SIZE, lambda: batch_size)[initial_build is False]()
+            batch_size = (lambda: self.BATCH_SIZE,
+                          lambda: batch_size)[initial_build is False]()
+
             # GPU - CuDNNGRU: The NVIDIA Compute Unified Device Architecture (CUDA) based Deep Neural Network library...
-            # ... is a GPU accelerated library of primitives for Deep Neural Networks. CuDNNGRU is a fast GRU impl...
-            # within the CuDNN framework.
+            # ... is a GPU accelerated library of primitives for Deep Neural Networks.
+            # CuDNNGRU is a fast GRU impl within the CuDNN framework.
+
             # CPU - Develop a modified RNN layer by using functools.partial
+
             custom_gru = (lambda: functools.partial(tensorflow.keras.layers.GRU,
                                                     recurrent_activation='sigmoid'),
                           lambda: tensorflow.keras.layers.CuDNNGRU)[self.gpu_availability]()
+
             # Construct the model sequentially
             model = tensorflow.keras.Sequential([
                 # The Embedding Layer
-                # Project the contextual vector onto a dense, continuous vector space
+                # Project the contextual vector onto a dense, lower-dimensional, continuous vector space
                 tensorflow.keras.layers.Embedding(len(self.available_vocabulary),
                                                   self.PROJECTED_VECTOR_SIZE,
                                                   batch_input_shape=[batch_size,
                                                                      None]),
-                # The Recurrent Neural Network - use GRU or LSTM units
-                # GRUs are used here because structurally they're simpler and hence take smaller training times
-                # Also, they don't have a forget gate in them, so they expose the entire memory during their operation
-                custom_gru(self.NUMBER_OF_RNN_UNITS,
+                # The Recurrent Neural Network layers - use GRU or LSTM units
+                # GRUs are used here because structurally they're simpler and hence take smaller training times.
+                # Also, they don't have a forget gate in them, so they expose the entire memory during their operation.
+                # RNN Layer 1
+                custom_gru(self.NUMBER_OF_RNN_UNITS_1,
                            return_sequences=True,
                            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
                            # ...uniformly from...
                            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
                            recurrent_initializer='glorot_uniform',
                            stateful=True),
+                # RNN Layer 2
+                custom_gru(self.NUMBER_OF_RNN_UNITS_2,
+                           return_sequences=True,
+                           # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                           # ...uniformly from...
+                           # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                           recurrent_initializer='glorot_uniform',
+                           stateful=True),
+
+                # RNN Layer 3
+                # custom_gru(self.NUMBER_OF_RNN_UNITS_3,
+                #            return_sequences=True,
+                #            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                #            # ...uniformly from...
+                #            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                #            recurrent_initializer='glorot_uniform',
+                #            stateful=True),
+
                 # The Hinton dropout layer
                 # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
+
                 # The fully connected neural network
                 # A classification-type output onto the vocabulary
                 tensorflow.keras.layers.Dense(len(self.available_vocabulary))
@@ -212,14 +289,14 @@ class RNNStockAnalysis(object):
         except Exception as e:
             print('[ERROR] RNNStockAnalysis build: Exception caught while building the model - {}'.format(e))
             # Detailed stack trace
-            # traceback.print_tb(e.__traceback__)
+            traceback.print_tb(e.__traceback__)
             return False, None
 
     @staticmethod
     # The cost function for the defined model
     def cost_function(y_true_values, y_predicted_values):
-        # Sparse Categorical Cross-Entropy is chosen because we have mutually exclusive classes in a classic...
-        # ...classification problem
+        # Sparse Categorical Cross-Entropy is chosen because we have a large number of mutually exclusive classes, i.e.,
+        # ...non-binary output labels in a standard classification problem
         return tensorflow.keras.losses.sparse_categorical_crossentropy(y_true=y_true_values,
                                                                        y_pred=y_predicted_values,
                                                                        from_logits=True)
@@ -227,23 +304,34 @@ class RNNStockAnalysis(object):
     # Set the model up with the optimizer and the cost function
     def compile(self):
         try:
-            # The Adam Optimizer, Sparse Categorical Cross-Entropy cost function, and cost metrics for visualization
+            # The Adam Optimizer, Sparse Categorical Cross-Entropy Cost Function, and Visualization Cost Metrics
             self.model.compile(optimizer=tensorflow.train.AdamOptimizer(),
-                               loss=self.cost_function,
-                               metrics=[tensorflow.keras.metrics.sparse_categorical_crossentropy])
+                               loss=self.cost_function)
+
+            # I don't need the metrics member any more...
+            # self.model.compile(optimizer=tensorflow.train.AdamOptimizer(),
+            #                    loss=self.cost_function,
+            #                    metrics=[tensorflow.keras.metrics.sparse_categorical_crossentropy])
+
             return True
         except Exception as e:
             print('[ERROR] RNNStockAnalysis compile: Exception caught while compiling the model - {}'.format(e))
+            # Detailed stack trace
+            traceback.print_tb(e.__traceback__)
             return False
 
     # Train the model and Visualize the model's progression during training
     def train(self):
+        # Evaluate the steps_per_epoch for populating the eponymous member in the model.fit() routine
+        # steps_per_epoch = 6955 // (65 * 105) ~ 1
+        steps_per_epoch = self.TRAINING_DATA_LIMIT // (self.LOOK_BACK_CONTEXT_LENGTH * self.BATCH_SIZE)
         try:
             # TODO: Add a logging hook as a callback and include it in the 'callbacks' collection within the fit routine
             # Checkpoint feature callback
             checkpoint_callback = tensorflow.keras.callbacks.ModelCheckpoint(filepath=self.checkpoint_prefix,
                                                                              monitor='loss',
                                                                              save_weights_only=True,
+                                                                             # Save all checkpoints - vScrimmage
                                                                              save_best_only=False,
                                                                              verbose=1,
                                                                              mode='min',
@@ -254,8 +342,9 @@ class RNNStockAnalysis(object):
             # Visualize the progression of the cost function during training
             training_history = self.model.fit(self.split_dataset.repeat(),
                                               epochs=self.NUMBER_OF_TRAINING_EPOCHS,
-                                              steps_per_epoch=self.BATCH_SIZE,
-                                              callbacks=[checkpoint_callback, tensorboard])
+                                              steps_per_epoch=steps_per_epoch,
+                                              callbacks=[checkpoint_callback,
+                                                         tensorboard])
             training_trace = go.Scatter(x=training_history.epoch,
                                         y=training_history.history[self.COST_METRIC],
                                         mode=self.PLOTLY_SCATTER_MODE)
@@ -276,14 +365,14 @@ class RNNStockAnalysis(object):
         except Exception as e:
             print('[ERROR] RNNStockAnalysis train: Exception caught while training the model - {}'.format(e))
             # Detailed stack trace
-            # traceback.print_tb(e.__traceback__)
+            traceback.print_tb(e.__traceback__)
             return False, None
 
     # Predict the next ${LOOK_AHEAD_SIZE} stock prices
     def predict(self):
         # The output to be returned
         predicted_prices = []
-        # GPU Availability - Check again
+        # GPU Availability - Check again in case something took up the discrete graphics capabilities of the machine
         self.gpu_availability = tensorflow.test.is_gpu_available()
         print('[INFO] RNNStockAnalysis Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
         # Modify the model for a batch size of 1
@@ -293,33 +382,40 @@ class RNNStockAnalysis(object):
             print('[ERROR] RNNStockAnalysis predict: The operation failed due to previous errors!')
             return
         try:
+            # I might be loading a checkpoint where the model had a high loss, ...
+            # ...But I have a Scrimmage variant to offset this...
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
-            modified_model.build(tensorflow.TensorShape([1, None]))
+            modified_model.build(tensorflow.TensorShape([1,
+                                                         None]))
             # The tail-end look-back context for the initial look-ahead prediction
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
-            # ... of the test dataset
+            # ...of the training dataset
             cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
-                trigger = tensorflow.expand_dims(cumulative_context, 0)
+                trigger = tensorflow.expand_dims(cumulative_context,
+                                                 0)
                 prediction = modified_model(trigger)
                 # Remove the useless dimension
                 prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
-                predicted_price = tensorflow.multinomial(prediction, num_samples=1)[-1, 0].numpy()
+                predicted_price = tensorflow.multinomial(prediction,
+                                                         num_samples=1)[-1, 0].numpy()
                 # Append the predicted value to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
                 # Context modification logic
                 # Add the predicted price to the context which would be used for the next iteration
-                cumulative_context = numpy.append(cumulative_context, [predicted_price], axis=0)
+                cumulative_context = numpy.append(cumulative_context,
+                                                  [predicted_price],
+                                                  axis=0)
                 # Move the context window to include the latest prediction and discount the oldest contextual element
                 cumulative_context = cumulative_context[1:]
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
-            # traceback.print_tb(e.__traceback__)
+            traceback.print_tb(e.__traceback__)
         return predicted_prices
 
     # The termination sequence
@@ -343,7 +439,8 @@ def visualize_predictions(obj, _true_values, _predicted_values):
                                        'test data set',
                                  xaxis=dict(title='Time'),
                                  yaxis=dict(title='Closing Stock Price'))
-    final_analysis_figure = dict(data=[real_final_analysis_trace, generated_final_analysis_trace],
+    final_analysis_figure = dict(data=[real_final_analysis_trace,
+                                       generated_final_analysis_trace],
                                  layout=final_analysis_layout)
     final_analysis_url = plotly.plotly.plot(final_analysis_figure,
                                             filename='Prediction_Analysis_Test_Dataset')
@@ -368,7 +465,9 @@ if __name__ == '__main__':
     print('[INFO] RNNStockAnalysis Trigger: Starting system assessment!')
     rnnStockAnalysis = RNNStockAnalysis()
     # TODO: Use an ETL-type pipeline for this sequence of operations on the model
-    if rnnStockAnalysis.build_model()[0] and rnnStockAnalysis.compile() and rnnStockAnalysis.train()[0]:
+    if rnnStockAnalysis.build_model()[0] and \
+            rnnStockAnalysis.compile() and \
+            rnnStockAnalysis.train()[0]:
         print('[INFO] RNNStockAnalysis Trigger: The model has been built, compiled, and trained! '
               'Evaluating the model...')
         visualize_predictions(rnnStockAnalysis,
