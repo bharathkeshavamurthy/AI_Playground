@@ -20,6 +20,10 @@ Change Log - 23-July-2019:
 4. Lowering the kernel_width ($\\sigma^2$) for providing better weight to the closest neighbors
 
 5. Increasing the regularization_constant ($\\alpha$) to be more inline with the change in the kernel_width
+
+6. Adding a Hinton Dropout Layer with a dropout factor of 0.2 - prevent overfitting
+
+7. Reducing the number of neurons in the hidden layers from (2048x1024) to (1024x512) - prevent overfitting
 """
 
 # The imports
@@ -35,8 +39,9 @@ import traceback
 import tensorflow
 # import progressbar
 from tabulate import tabulate
-from recordclass import recordclass
 from collections import namedtuple
+from recordclass import recordclass
+from sklearn.metrics import confusion_matrix
 
 # Get rid of the false positive pandas "SettingWithCopyWarning" message
 # There's no chaining happening
@@ -432,10 +437,10 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     KEEP_PROBABILITY = 0.8
 
     # The number of neurons in the input layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_1 = 2048
+    NUMBER_OF_HIDDEN_UNITS_1 = 1024
 
     # The number of neurons in the hidden layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_2 = 1024
+    NUMBER_OF_HIDDEN_UNITS_2 = 512
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
     BATCH_SIZE = 64
@@ -655,9 +660,18 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # After training the model, evaluate the model against the test data
     def evaluate_model(self):
         try:
-            prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features, self.test_labels)
-            print('[INFO] NeuralNetworkClassificationEngine evaluate: Test Data Prediction Loss = {}, '
-                  'Test Data Prediction Accuracy = {}'.format(prediction_loss, prediction_accuracy))
+            test_predictions = [int(k[0]) for k in self.model.predict(self.test_features)]
+            # External sklearn confusion_matrix
+            print('[INFO] NeuralNetworkClassificationEngine evaluate: '
+                  'The confusion matrix with respect to the test data is: '
+                  '\n{}'.format(confusion_matrix(self.test_labels,
+                                                 test_predictions)))
+
+            # Internal TensorFlow/Keras evaluation
+            # prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features, self.test_labels)
+            # print('[INFO] NeuralNetworkClassificationEngine evaluate: Test Data Prediction Loss = {}, '
+            #       'Test Data Prediction Accuracy = {}'.format(prediction_loss, prediction_accuracy))
+
             # Model evaluation is complete!
             return True
         except Exception as e:
@@ -740,6 +754,8 @@ class PredictionRationaleEngine(object):
                                                    self.regularization_constraint,
                                                    self.line_segments,
                                                    self)
+        # The initial steps have been completed. The core logic follows.
+        self.status = True
         # The optimizer is setup correctly
         if self.optimizer.status:
             # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
@@ -761,14 +777,17 @@ class PredictionRationaleEngine(object):
                             'on what went wrong!')
                         # Additional enforcement
                         classifier_status = False
-                    print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
-                          'for the classifier [{}] with ID [{}] is described by [{}] whose loss from '
-                          'local curve fitting is [{}] and '
-                          'whose respective associated weights are given by [{}].'.format(classifier.__class__.__name__,
-                                                                                          classifier_id,
-                                                                                          ranked_models[0].features,
-                                                                                          ranked_models[0].loss,
-                                                                                          ranked_models[0].parameters))
+                        self.status = False
+                    else:
+                        print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
+                              'for the classifier [{}] with ID [{}] is described by [{}] whose loss from '
+                              'local curve fitting is [{}] and '
+                              'whose respective associated weights '
+                              'are given by [{}].'.format(classifier.__class__.__name__,
+                                                          classifier_id,
+                                                          ranked_models[0].features,
+                                                          ranked_models[0].loss,
+                                                          ranked_models[0].parameters))
                     print('[INFO] PredictionRationaleEngine Explanation: The models are ranked in the increasing order '
                           'of their converged loss function values below.')
                     # Print the models in the increasing order of their loss function values
@@ -777,9 +796,10 @@ class PredictionRationaleEngine(object):
                                                                              ranked_models[i].features,
                                                                              ranked_models[i].loss,
                                                                              ranked_models[i].parameters))
+                else:
+                    self.status = False
                 print('[INFO] PredictionRationaleEngine Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
-            self.status = True
             print('[INFO] PredictionRationaleEngine Initialization: '
                   'All registered classifiers have been tagged and their prediction rationales have been explained. '
                   'Final status: [{}]'.format(self.status))

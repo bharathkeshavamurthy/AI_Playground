@@ -448,7 +448,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     NUMBER_OF_HIDDEN_UNITS_2 = 2048
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
-    BATCH_SIZE = 64
+    BATCH_SIZE = 144
 
     # The number of epochs to train the model
     NUMBER_OF_TRAINING_EPOCHS = 1000
@@ -660,18 +660,21 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # After training the model, evaluate the model against the test data
     def evaluate_model(self):
         try:
-            test_predictions = self.model.predict(self.test_features)
-            # Internal TensorFlow/Keras evaluation
-            prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features,
-                                                                       self.test_labels)
+            test_predictions = [int(k[0]) for k in self.model.predict(self.test_features)]
             # External sklearn confusion_matrix
             print('[INFO] NeuralNetworkClassificationEngine evaluate: '
                   'The confusion matrix with respect to the test data is: '
                   '\n{}'.format(confusion_matrix(self.test_labels,
                                                  test_predictions)))
-            print('[INFO] NeuralNetworkClassificationEngine evaluate: Test Data Prediction Loss = {}, '
-                  'Test Data Prediction Accuracy = {}'.format(prediction_loss,
-                                                              prediction_accuracy))
+
+            # Internal TensorFlow/Keras evaluation
+            # prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features,
+            #                                                            self.test_labels)
+
+            # print('[INFO] NeuralNetworkClassificationEngine evaluate: Test Data Prediction Loss = {}, '
+            #       'Test Data Prediction Accuracy = {}'.format(prediction_loss,
+            #                                                   prediction_accuracy))
+
             # Model evaluation is complete!
             return True
         except Exception as e:
@@ -754,6 +757,8 @@ class LinkFailureCausationAnalyzer(object):
                                                    self.regularization_constraint,
                                                    self.line_segments,
                                                    self)
+        # The initial steps have been completed. The core logic follows.
+        self.status = True
         # The optimizer is setup correctly
         if self.optimizer.status:
             # Build, Train, and Evaluate the global prediction accuracy of the classifiers in the repository
@@ -773,17 +778,22 @@ class LinkFailureCausationAnalyzer(object):
                             '[ERROR] LinkFailureCausationAnalyzer Explanation: Something went wrong while developing '
                             'the interpretation. Please refer to the earlier logs for more information '
                             'on what went wrong!')
-                    print('[INFO] LinkFailureCausationAnalyzer Explanation: The locally interpretable explanation '
-                          'for the classifier [{}] with ID [{}] is described by [{}] whose evaluated loss during '
-                          'local curve fitting is [{}] and whose respective associated weights '
-                          'are [{}].'.format(classifier.__class__.__name__,
-                                             classifier_id,
-                                             explanation.features,
-                                             explanation.loss,
-                                             explanation.parameters))
+                        # Additional enforcement
+                        classifier_status = False
+                        self.status = False
+                    else:
+                        print('[INFO] LinkFailureCausationAnalyzer Explanation: The locally interpretable explanation '
+                              'for the classifier [{}] with ID [{}] is described by [{}] whose evaluated loss during '
+                              'local curve fitting is [{}] and whose respective associated weights '
+                              'are [{}].'.format(classifier.__class__.__name__,
+                                                 classifier_id,
+                                                 explanation.features,
+                                                 explanation.loss,
+                                                 explanation.parameters))
+                else:
+                    self.status = False
                 print('[INFO] LinkFailureCausationAnalyzer Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
-            self.status = True
             print('[INFO] LinkFailureCausationAnalyzer Initialization: '
                   'All registered classifiers have been tagged and their prediction rationales have been explained. '
                   'Final status: [{}]'.format(self.status))
