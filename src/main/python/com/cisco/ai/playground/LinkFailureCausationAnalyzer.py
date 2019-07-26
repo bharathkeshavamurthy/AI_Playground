@@ -1,10 +1,30 @@
 # |Bleeding-Edge Productions|
 # This entity details a technique to provide an explanation for the predictions made by black-box deep-learning models.
-# Author: Bharath Keshavamurthy
-# Organization: CISCO Systems, Inc.
+# Author: Bharath Keshavamurthy {bkeshava}
+# Organization: DC NX-OS, CISCO Systems Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
-# TODO: A logging framework instead of all these formatted print statements...
+# TODO: A logging framework instead of all these formatted print statements
+
+"""
+Change Log - 23-July-2019:
+@author: Bharath Keshavamurthy <bkeshava at cisco dot com>
+
+1. Increasing the confidence bound from 100 to 200 for greater stability during convergence analysis
+
+2. Removing the additional current_convergence_check in the projection while loop which is offset by the increased
+    convergence threshold
+
+3. Fixing the bug in the global deregister() routine
+
+4. Increasing the number of training epochs in the NeuralNetworkClassificationEngine from 10 to 1000: Quadro P4000 run
+
+5. Lowering the kernel_width ($\\sigma^2$) for providing better weights to the closest neighbors
+
+6. Increasing the regularization_constant ($\\alpha$) to be more inline with the change in the kernel_width
+
+7. Adding a confusion matrix to visualize the number of false positives and the number of false negatives
+"""
 
 # The imports
 import sys
@@ -15,26 +35,32 @@ import pandas
 import random
 import itertools
 import traceback
+from sklearn.metrics import confusion_matrix
+
 # import threading
+
 import tensorflow
+
 # import progressbar
+
 from tabulate import tabulate
 from recordclass import recordclass
 from collections import namedtuple
 
-# Get rid of the false positive pandas "SettingWithCopyWarning" message
-# There's no chaining happening
+# Get rid of the false positive pandas "SettingWithCopyWarning" message: There's no chaining happening in this entity
 pandas.options.mode.chained_assignment = None
 
 # Plotly user account credentials for visualization
-plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPiEW5S')
+plotly.tools.set_credentials_file(username='bkeshava',
+                                  api_key='RHqYrDdThygiJEPiEW5S')
 
 
 # The optimizer
-# The Projection Gradient Descent entity for Constrained Convex Optimization
-# This algorithmic implementation is suitable only for polyhedra. Something other than vector projection needs to be...
-# ...used for feasible sets which are not finite intersections of half-spaces.
-# TODO: Projection Gradient Descent optimizer implementations for problems with non-polyhedron feasible sets.
+# The Projection Gradient Descent (PGD) entity for Constrained Convex Optimization
+# This algorithmic implementation is suitable only for polyhedra.
+# Something other than vector projection needs to be used for feasible sets which are not...
+# ...finite intersections of half-spaces.
+# TODO: Projection Gradient Descent optimizer implementations for problems with non-polyhedron feasible sets
 class ProjectionGradientDescent(object):
 
     # The initialization sequence
@@ -42,7 +68,7 @@ class ProjectionGradientDescent(object):
         print('[INFO] ProjectionGradientDescent Initialization: Bringing things up...')
         # The initialization status flag
         self.status = False
-        # Support for dimensionality is currently limited to ${SUPPORTED_DIMENSIONALITY}-dimensional feasible sets.
+        # The support for dimensionality is currently limited to ${SUPPORTED_DIMENSIONALITY}-dimensional feasible sets.
         # You may have to use a Lagrangian based formulation with Stochastic Projection Gradient Descent in the Dual...
         # ...for dimensionalities greater than ${SUPPORTED_DIMENSIONALITY).
         # TODO: Projection Gradient Descent for N-dimensional feasible sets or domains (N > ${SUPPORTED_DIMENSIONALITY})
@@ -54,26 +80,27 @@ class ProjectionGradientDescent(object):
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
         self.initial_weights = (10.4, -48.1)
-        # The intercept constraint in the given linear inequality constraint, i.e. the regularization constant
+        # The intercept constraint in the given linear inequality, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
+        # TODO: Use Exact Line Search or Backtracking Line Search for choosing the step size more scientifically
         self.default_step_size = 0.01
         # Two-dimensional Projection Gradient Descent
-        # The line segments of the polyhedron which comprises the feasible set
+        # The line segments of the polyhedron which constitute the feasible set
         self.line_segments = _line_segments
         # The iterations array which models the x-axis of the convergence plot
         self.iterations = []
         # The function values array which models the y-axis of the convergence plot
         self.function_values = []
         # The confidence bound for convergence
-        self.confidence_bound = 100
+        self.confidence_bound = 200
         # The number of digits post the decimal point to be considered for convergence analysis
         self.convergence_significance = 10  # modelled from significant digits of a number
         # The maximum number of iterations allowed during training
         self.max_iterations = 1e6
         # The rationaleEngine for loss function and gradient evaluation
         self.rationale_engine = _rationale_engine
-        # The initialization has been completed successfully
+        # The initialization has been completed successfully - captured by this status flag
         self.status = True
 
     # Vector Projection utility routine
@@ -102,7 +129,9 @@ class ProjectionGradientDescent(object):
                 return True, math.sqrt(((x - x2) * (x - x2)) + ((y - y2) * (y - y2))), (x2, y2)
             # Find the closest point using the projection component
             else:
+                # x-component => what portion of the base vector will the operand vector be projected upon w.r.t x
                 x_closest = x1 + (component * (x2 - x1))
+                # y-component => what portion of the base vector will the operand vector be projected upon w.r.t y
                 y_closest = y1 + (component * (y2 - y1))
                 return True, math.sqrt(((x - x_closest) * (x - x_closest)) + ((y - y_closest) * (y - y_closest))), (
                     x_closest, y_closest)
@@ -147,7 +176,7 @@ class ProjectionGradientDescent(object):
             status, (x_projected_point, y_projected_point) = self.projection(current_point)
             if status:
                 # Check if the projection of the point is the point itself
-                # Termination condition of PGD: [\theta^*]^{+} = \theta^*
+                # Termination condition of PGD: [\vec{\theta}^*]^{+} = \vec{\theta}^*
                 # Again, this is a 2-dimensional PGD routine - this is not valid for PGDs of different dimensionalities
                 if (numpy.round(x_projected_point,
                                 self.convergence_significance),
@@ -170,17 +199,14 @@ class ProjectionGradientDescent(object):
                                          isinstance(_step_size, float) and
                                          _step_size > 0.0]()
         previous_point = None
-        # The convergence is theoretically guaranteed in finite time irrespective of the initialization
+        # The convergence is theoretically guaranteed in finite time irrespective of the initialization.
         # For a detailed proof, please refer to "Convex Optimization" by Boyd and Vandenberghe.
         current_point = self.initial_weights
         confidence = 0
         iteration_count = 0
         # Limit the number of iterations allowed
         # Enable confidence check for convergence
-        # Make a standard convergence check for the projection operation [x]^{+} = x = x^{*}
-        while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound) and (
-                self.convergence_check(previous_point,
-                                       current_point) is False):
+        while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound):
             if self.convergence_check(previous_point,
                                       current_point):
                 # Increment confidence, if converged
@@ -195,13 +221,15 @@ class ProjectionGradientDescent(object):
             everything_is_okay, current_point = self.projection((current_point[0] - (step_size * gradient[0]),
                                                                  current_point[1] - (step_size * gradient[1])))
             # Propagating failure upward to the calling routine
-            # TODO: Maybe, send a callback into the mess below and check its status upon its return;...
+            # TODO: Maybe send a callback into the mess below and check its status upon its return?
             #  It's much cleaner that way!
             if everything_is_okay is False:
                 return False, None, None
             iteration_count += 1
         # After convergence, visualize the progression of the cost function
         # TODO: Do I need the visualization of the optimization process?
+        #  The number of plots generated increases exponentially with the number of features in the classifier.
+        #  So, for now, comment out the visualization call for every locally interpretable model optimization.
         # self.visualize()
         # Return the converged loss (function value) and the converged parameters of the regression model
         return True, self.function_values[-1], current_point
@@ -296,8 +324,8 @@ task_repository = {}
 
 # The supported dimensionality
 # For varying dimensionalities, the software architecture would be to register dimensionality-specific optimizers...
-# ...and trigger them accordingly. Or, use Stochastic Projection Gradient Descent in the dual for a...
-# ...global, consolidated solution.
+# ...and trigger them accordingly.
+# Or, use Stochastic Projection Gradient Descent in the Dual for a global consolidated solution.
 SUPPORTED_DIMENSIONALITY = 2
 
 # Plotly Scatter mode
@@ -322,7 +350,8 @@ def deregister(_id):
     try:
         task = task_repository.pop(_id)
         print('[INFO] GlobalView de-register: Successfully removed task [{}: {}] '
-              'from the task repository'.format(_id, task.__name__))
+              'from the task repository'.format(_id,
+                                                task.__class__.__name__))
     except KeyError:
         print('[ERROR] GlobalView de-register: The task ID [{}] does not exist in the task repository! Nothing to be '
               'done!'.format(_id))
@@ -334,7 +363,8 @@ class ClassificationTask(object):
     # The initialization sequence
     def __init__(self, _task_id, _features):
         print('[INFO] ClassificationTask Initialization: Bringing things up...')
-        self.registration_status = register(_task_id, self)
+        self.registration_status = register(_task_id,
+                                            self)
         self.features = _features
 
     # Abstract contract for model building
@@ -404,7 +434,9 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     TASK_ID = 'NN_CLASSIFIER_1'
 
     # A data structure for easy, clean storage and access of data
-    DATA = namedtuple('Data', ['features', 'label'])
+    DATA = namedtuple('Data',
+                      ['features',
+                       'label'])
 
     # Use ${TRAINING_SPLIT} * 100% of the data for training and the remaining for testing and/or validation
     TRAINING_SPLIT = 0.8
@@ -419,7 +451,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     BATCH_SIZE = 64
 
     # The number of epochs to train the model
-    NUMBER_OF_TRAINING_EPOCHS = 10
+    NUMBER_OF_TRAINING_EPOCHS = 1000
 
     # Process the data before feeding it into the Classifier
     def process_data(self, data, family):
@@ -431,7 +463,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             vocabulary = sorted(set(self.dataframe[family]))
             self.feature_vocabulary_mapping[family] = vocabulary
             # A word to integer mapping for categorical columns
-            feature_index_map = (lambda: {u.strip(): i + 1 for i, u in enumerate(vocabulary)},
+            feature_index_map = (lambda: {u.strip(): i for i, u in enumerate(vocabulary)},
                                  lambda: {k: j for j, k in enumerate(vocabulary)})[isinstance(data, str) is False]()
             # Evaluate the mean and standard deviation of the integer mappings for normalization
             # Add the feature index map, the mean, and the standard deviation of the feature family to the...
@@ -440,8 +472,8 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                                                   numpy.mean(list(feature_index_map.values())),
                                                   numpy.std(list(feature_index_map.values())))
         feature_index_map, mean, standard_deviation = self.data_processor_memory[family]
-        # Normalize the value according to the stats for that particular family and returned the normalized value
-        # A corner case check
+        # Normalize the value according to the stats for that particular family and return the normalized value
+        # A corner case check - DivideByZero Error
         if standard_deviation != 0.0:
             return float(feature_index_map[data] - mean) / standard_deviation
         return feature_index_map[data]
@@ -481,9 +513,11 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
 
             # Processing the input features to make them compatible with the Classification Engine
             for feature_column in features.columns:
+
                 # # Change the data-type of this column [dtype = numpy.int64] for normalization
                 # if isinstance(features[feature_column][0], numpy.int64):
                 #     features[feature_column] = features[feature_column].astype(numpy.float)
+
                 internal_proc_counter = 0.0
                 for i in range(len(features[feature_column])):
                     internal_proc_counter += 1.0
@@ -560,6 +594,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Build the Neural Network model
     def build_model(self):
         try:
+            # Since I'm running on a TensorFlow backend, the model will automatically run on a GPU if one is detected.
             # Construct a standard NN model with one hidden layer and ReLU & sigmoid non-linearities
             self.model = tensorflow.keras.Sequential([
                 # The input layer (input_shape = (len(self.dataframe.columns) - 1,)) and the first hidden layer
@@ -586,6 +621,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Train the model on the training dataset
     def train_model(self):
         try:
+
             # I use an AdamOptimizer in the place of the simpler tensorflow.train.GradientDescentOptimizer()...
             # ...because the AdamOptimizer uses the moving average of parameters and this facilitates...
             # ...faster convergence by settling on a larger effective step-size.
@@ -624,9 +660,18 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # After training the model, evaluate the model against the test data
     def evaluate_model(self):
         try:
-            prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features, self.test_labels)
+            test_predictions = self.model.predict(self.test_features)
+            # Internal TensorFlow/Keras evaluation
+            prediction_loss, prediction_accuracy = self.model.evaluate(self.test_features,
+                                                                       self.test_labels)
+            # External sklearn confusion_matrix
+            print('[INFO] NeuralNetworkClassificationEngine evaluate: '
+                  'The confusion matrix with respect to the test data is: '
+                  '\n{}'.format(confusion_matrix(self.test_labels,
+                                                 test_predictions)))
             print('[INFO] NeuralNetworkClassificationEngine evaluate: Test Data Prediction Loss = {}, '
-                  'Test Data Prediction Accuracy = {}'.format(prediction_loss, prediction_accuracy))
+                  'Test Data Prediction Accuracy = {}'.format(prediction_loss,
+                                                              prediction_accuracy))
             # Model evaluation is complete!
             return True
         except Exception as e:
@@ -648,11 +693,15 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb, task_id):
         print('[INFO] NeuralNetworkClassificationEngine Termination: Tearing things down...')
-        ClassificationTask.__exit__(self, exc_type, exc_val, exc_tb, self.TASK_ID)
+        ClassificationTask.__exit__(self,
+                                    exc_type,
+                                    exc_val,
+                                    exc_tb,
+                                    self.TASK_ID)
 
 
-# This class describes the procedure to provide intuitive, interpretable explanations for the predictions made by a...
-# ...Black Box Deep Learning models for binary classification tasks.
+# This class describes the procedure to provide intuitive, interpretable explanations for the predictions made by...
+# ...Black Box Deep Learning Models for binary classification tasks.
 # This rationale engine is model agnostic.
 class LinkFailureCausationAnalyzer(object):
 
@@ -664,7 +713,7 @@ class LinkFailureCausationAnalyzer(object):
         # The dimensionality of the locally interpretable model used in the rationale engine
         self.dimensionality = SUPPORTED_DIMENSIONALITY
         # The width parameter of the exponential kernel function
-        self.kernel_width = 1
+        self.kernel_width = 0.2
         # Instance definition
         # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{K}$ is the feature vector
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
@@ -683,7 +732,7 @@ class LinkFailureCausationAnalyzer(object):
         # The number of perturbed instances sampled from the instance under analysis = N
         self.perturbed_samples_count = 10000
         # The regularization constraint = \alpha
-        self.regularization_constraint = 100
+        self.regularization_constraint = 150
         # The <classifier_id, classifier> pairs under prediction-rationale analysis
         self.classifiers_under_analysis = task_repository.items()
         # A collection for successfully built, compiled, and trained classifiers
@@ -725,8 +774,13 @@ class LinkFailureCausationAnalyzer(object):
                             'the interpretation. Please refer to the earlier logs for more information '
                             'on what went wrong!')
                     print('[INFO] LinkFailureCausationAnalyzer Explanation: The locally interpretable explanation '
-                          'for the classifier [{}] is described by [{}].'.format(classifier.__class__.__name__,
-                                                                                 explanation.features))
+                          'for the classifier [{}] with ID [{}] is described by [{}] whose evaluated loss during '
+                          'local curve fitting is [{}] and whose respective associated weights '
+                          'are [{}].'.format(classifier.__class__.__name__,
+                                             classifier_id,
+                                             explanation.features,
+                                             explanation.loss,
+                                             explanation.parameters))
                 print('[INFO] LinkFailureCausationAnalyzer Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
             self.status = True
@@ -747,7 +801,7 @@ class LinkFailureCausationAnalyzer(object):
     def get_interpretable_explanation(self, classifier):
         features_under_analysis = classifier.dataframe.columns[:-1]
         # Explain a prediction
-        # Make a prediction using the built, compiled, and trained classifier - population
+        # Make a prediction using the built, compiled, and trained classifier
         sample_index, features, label = classifier.make_a_prediction()
         self.instance_under_analysis.features = features
         self.instance_under_analysis.label = label
@@ -857,7 +911,8 @@ class LinkFailureCausationAnalyzer(object):
               'Completed locally interpretable linear model analyses for all possible '
               'feature family tuples of length {}. '
               'Finding the best explanation among these analyzed models...'.format(self.interpretable_features_count))
-        best_model = min(model_results_collection, key=lambda x: x.loss)
+        best_model = min(model_results_collection,
+                         key=lambda x: x.loss)
         return best_model
 
     # Evaluate the cost function / loss at the current point in $\mathbb{R}^{\kappa}$
@@ -869,7 +924,7 @@ class LinkFailureCausationAnalyzer(object):
                         i * j for i, j in zip(parameter_vector, baremetal_perturbed_sample.features))) ** 2))
         return loss / self.perturbed_samples_count
 
-    # Evaluate the gradient of the cost function / loss at the current point $\mathbb{R}^{\kappa}$
+    # Evaluate the gradient of the cost function or loss at the current point $\mathbb{R}^{\kappa}$
     def evaluate_gradients(self, parameter_vector, dimensionality):
         if dimensionality is not self.dimensionality:
             raise NotImplementedError('[ERROR] LinkFailureCausationAnalyzer evaluate_gradients: '

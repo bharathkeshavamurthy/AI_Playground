@@ -1,10 +1,26 @@
 # |Bleeding-Edge Productions|
 # This entity details a technique to provide an explanation for the predictions made by black-box deep-learning models.
-# Author: Bharath Keshavamurthy
-# Organization: CISCO Systems, Inc.
+# Author: Bharath Keshavamurthy {bkeshava}
+# Organization: DC NX-OS, CISCO Systems Inc.
 # Copyright (c) 2019. All Rights Reserved.
 
 # TODO: A logging framework instead of all these formatted print statements...
+
+"""
+Change Log - 23-July-2019:
+@author: Bharath Keshavamurthy <bkeshava at cisco dot com>
+
+1. Increasing the confidence bound from 100 to 200 for greater stability during convergence analysis
+
+2. Removing the additional current_convergence_check in the projection while loop which is offset by the increased
+    convergence threshold
+
+3. Fixing the bug in the global deregister() routine
+
+4. Lowering the kernel_width ($\\sigma^2$) for providing better weight to the closest neighbors
+
+5. Increasing the regularization_constant ($\\alpha$) to be more inline with the change in the kernel_width
+"""
 
 # The imports
 import sys
@@ -27,13 +43,15 @@ from collections import namedtuple
 pandas.options.mode.chained_assignment = None
 
 # Plotly user account credentials for visualization
-plotly.tools.set_credentials_file(username='bkeshava', api_key='RHqYrDdThygiJEPiEW5S')
+plotly.tools.set_credentials_file(username='bkeshava',
+                                  api_key='RHqYrDdThygiJEPiEW5S')
 
 
 # The optimizer
 # The Projection Gradient Descent entity for Constrained Convex Optimization
-# This algorithmic implementation is suitable only for polyhedra. Something other than vector projection needs to be...
-# ...used for feasible sets which are not finite intersections of half-spaces.
+# This algorithmic implementation is suitable only for polyhedra.
+# Something other than vector projection needs to be used for feasible sets which are not...
+#  finite intersections of half-spaces.
 # TODO: Projection Gradient Descent optimizer implementations for problems with non-polyhedron feasible sets.
 class ProjectionGradientDescent(object):
 
@@ -42,7 +60,7 @@ class ProjectionGradientDescent(object):
         print('[INFO] ProjectionGradientDescent Initialization: Bringing things up...')
         # The initialization status flag
         self.status = False
-        # Support for dimensionality is currently limited to ${SUPPORTED_DIMENSIONALITY}-dimensional feasible sets.
+        # The support for dimensionality is currently limited to ${SUPPORTED_DIMENSIONALITY}-dimensional feasible sets.
         # You may have to use a Lagrangian based formulation with Stochastic Projection Gradient Descent in the Dual...
         # ...for dimensionalities greater than ${SUPPORTED_DIMENSIONALITY).
         # TODO: Projection Gradient Descent for N-dimensional feasible sets or domains (N > ${SUPPORTED_DIMENSIONALITY})
@@ -66,7 +84,7 @@ class ProjectionGradientDescent(object):
         # The function values array which models the y-axis of the convergence plot
         self.function_values = []
         # The confidence bound for convergence
-        self.confidence_bound = 100
+        self.confidence_bound = 200
         # The number of digits post the decimal point to be considered for convergence analysis
         self.convergence_significance = 10  # modelled from significant digits of a number
         # The maximum number of iterations allowed during training
@@ -178,9 +196,7 @@ class ProjectionGradientDescent(object):
         # Limit the number of iterations allowed
         # Enable confidence check for convergence
         # Make a standard convergence check for the projection operation [x]^{+} = x = x^{*}
-        while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound) and (
-                self.convergence_check(previous_point,
-                                       current_point) is False):
+        while (iteration_count < self.max_iterations) and (confidence < self.confidence_bound):
             if self.convergence_check(previous_point,
                                       current_point):
                 # Increment confidence, if converged
@@ -322,7 +338,8 @@ def deregister(_id):
     try:
         task = task_repository.pop(_id)
         print('[INFO] GlobalView de-register: Successfully removed task [{}: {}] '
-              'from the task repository'.format(_id, task.__name__))
+              'from the task repository'.format(_id,
+                                                task.__class__.__name__))
     except KeyError:
         print('[ERROR] GlobalView de-register: The task ID [{}] does not exist in the task repository! Nothing to be '
               'done!'.format(_id))
@@ -404,7 +421,9 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     TASK_ID = 'NN_CLASSIFIER_1'
 
     # A data structure for easy, clean storage and access of data
-    DATA = namedtuple('Data', ['features', 'label'])
+    DATA = namedtuple('Data',
+                      ['features',
+                       'label'])
 
     # Use ${TRAINING_SPLIT} * 100% of the data for training and the remaining for testing and/or validation
     TRAINING_SPLIT = 0.8
@@ -413,13 +432,13 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     KEEP_PROBABILITY = 0.8
 
     # The number of neurons in the input layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_1 = 1024
+    NUMBER_OF_HIDDEN_UNITS_1 = 2048
 
     # The number of neurons in the hidden layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_2 = 2048
+    NUMBER_OF_HIDDEN_UNITS_2 = 1024
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
-    BATCH_SIZE = 50
+    BATCH_SIZE = 64
 
     # The number of epochs to train the model
     NUMBER_OF_TRAINING_EPOCHS = 5000
@@ -434,7 +453,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             vocabulary = sorted(set(self.dataframe[family]))
             self.feature_vocabulary_mapping[family] = vocabulary
             # A word to integer mapping for categorical columns
-            feature_index_map = (lambda: {u.strip(): i + 1 for i, u in enumerate(vocabulary)},
+            feature_index_map = (lambda: {u.strip(): i for i, u in enumerate(vocabulary)},
                                  lambda: {k: j for j, k in enumerate(vocabulary)})[isinstance(data, str) is False]()
             # Evaluate the mean and standard deviation of the integer mappings for normalization
             # Add the feature index map, the mean, and the standard deviation of the feature family to the...
@@ -596,6 +615,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Train the model on the training dataset
     def train_model(self):
         try:
+
             # I use an AdamOptimizer in the place of the simpler tensorflow.train.GradientDescentOptimizer()...
             # ...because the AdamOptimizer uses the moving average of parameters and this facilitates...
             # ...faster convergence by settling on a larger effective step-size.
@@ -659,7 +679,11 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # The termination sequence
     def __exit__(self, exc_type, exc_val, exc_tb, task_id):
         print('[INFO] NeuralNetworkClassificationEngine Termination: Tearing things down...')
-        ClassificationTask.__exit__(self, exc_type, exc_val, exc_tb, self.TASK_ID)
+        ClassificationTask.__exit__(self,
+                                    exc_type,
+                                    exc_val,
+                                    exc_tb,
+                                    self.TASK_ID)
 
 
 # This class describes the procedure to provide intuitive, interpretable explanations for the predictions made by a...
@@ -675,7 +699,7 @@ class PredictionRationaleEngine(object):
         # The dimensionality of the locally interpretable model used in the rationale engine
         self.dimensionality = SUPPORTED_DIMENSIONALITY
         # The width parameter of the exponential kernel function
-        self.kernel_width = 1
+        self.kernel_width = 0.2
         # Instance definition
         # $\vec{x} \in \mathcal{X}\ where\ \mathcal{X} \equiv \mathbb{R}^{K}$ is the feature vector
         # $y \in \mathcal{Y}\ where\ \mathcal{Y} \equiv \{0,\ 1\} is the output classifier label
@@ -694,7 +718,7 @@ class PredictionRationaleEngine(object):
         # The number of perturbed instances sampled from the instance under analysis = N
         self.perturbed_samples_count = 10000
         # The regularization constraint = \alpha
-        self.regularization_constraint = 100
+        self.regularization_constraint = 150
         # The <classifier_id, classifier> pairs under prediction-rationale analysis
         self.classifiers_under_analysis = task_repository.items()
         # A collection for successfully built, compiled, and trained classifiers
@@ -738,14 +762,21 @@ class PredictionRationaleEngine(object):
                         # Additional enforcement
                         classifier_status = False
                     print('[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation '
-                          'for the classifier [{}] is described by [{}].'.format(classifier.__class__.__name__,
-                                                                                 ranked_models[0].features))
+                          'for the classifier [{}] with ID [{}] is described by [{}] whose loss from '
+                          'local curve fitting is [{}] and '
+                          'whose respective associated weights are given by [{}].'.format(classifier.__class__.__name__,
+                                                                                          classifier_id,
+                                                                                          ranked_models[0].features,
+                                                                                          ranked_models[0].loss,
+                                                                                          ranked_models[0].parameters))
                     print('[INFO] PredictionRationaleEngine Explanation: The models are ranked in the increasing order '
                           'of their converged loss function values below.')
                     # Print the models in the increasing order of their loss function values
                     for i in range(len(ranked_models)):
-                        print('{}. {}'.format(str(i + 1),
-                                              ranked_models[i].features))
+                        print('{}. Causes: {}, Loss: {}, Weights: {}'.format(str(i + 1),
+                                                                             ranked_models[i].features,
+                                                                             ranked_models[i].loss,
+                                                                             ranked_models[i].parameters))
                 print('[INFO] PredictionRationaleEngine Initialization: '
                       'Classifier tagging status - [{}]'.format(classifier_status))
             self.status = True
