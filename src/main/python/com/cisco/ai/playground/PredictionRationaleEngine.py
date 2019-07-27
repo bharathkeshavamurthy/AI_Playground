@@ -17,13 +17,26 @@ Change Log - 23-July-2019:
 
 3. Fixing the bug in the global deregister() routine
 
-4. Lowering the kernel_width ($\\sigma^2$) for providing better weight to the closest neighbors
+4. Lowering the kernel_width ($\\sigma^2$) (to 0.2) for providing better weight to the closest neighbors
 
-5. Increasing the regularization_constant ($\\alpha$) to be more inline with the change in the kernel_width
+5. Increasing the regularization_constant ($\\alpha$) (to 150) to be more inline with the change in the kernel_width
 
-6. Adding a Hinton Dropout Layer with a dropout factor of 0.2 - prevent overfitting
+6. Changing the initial weights {to (60.0, 60.0)} to account for the change in the regularization constant
 
-7. Reducing the number of neurons in the hidden layers from (2048x1024) to (1024x512) - prevent overfitting
+TODO: Next-Release [19.08]
+ 7. Adding a Hinton Dropout Layer with a dropout factor of 0.1 - prevent overfitting
+
+8. Reducing the number of neurons in the hidden layers from (2048x1024) to (16x10) - prevent overfitting
+
+TODO: Next-Release [19.08]
+ 9. Reducing the number of perturbed samples from 10000 to 7500 considered for localized curve fitting
+
+10. Using a predefined hard-coded sample index of 4511 to facilitate localized curve-fitting analysis for negative
+classifications only [allows for a reduced set of abnormal/anomalous feature values]
+
+11. Increasing the BATCH_SIZE from 64 to 256 to reduce the amount of noise injected into the SGD process
+
+12. @ipasha: Adding a confusion matrix to visualize the number of false positives and the number of false negatives
 """
 
 # The imports
@@ -76,7 +89,7 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (10.4, -48.1)
+        self.initial_weights = (60.0, 60.0)
         # The intercept constraint in the given linear inequality constraint, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -434,16 +447,16 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     TRAINING_SPLIT = 0.8
 
     # The Geoff-Hinton Dropout rate for the regularization layer
-    KEEP_PROBABILITY = 0.8
+    # KEEP_PROBABILITY = 0.9
 
     # The number of neurons in the input layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_1 = 1024
+    NUMBER_OF_HIDDEN_UNITS_1 = 16
 
     # The number of neurons in the hidden layer of the NN model
-    NUMBER_OF_HIDDEN_UNITS_2 = 512
+    NUMBER_OF_HIDDEN_UNITS_2 = 10
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
-    BATCH_SIZE = 64
+    BATCH_SIZE = 256
 
     # The number of epochs to train the model
     NUMBER_OF_TRAINING_EPOCHS = 5000
@@ -601,8 +614,10 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                 # The hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_2,
                                               activation=tensorflow.nn.relu),
+
                 # A Hinton Dropout layer for regularization
-                tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
+                # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
+
                 # The output layer
                 tensorflow.keras.layers.Dense(units=1,
                                               activation=tensorflow.nn.sigmoid)
@@ -682,10 +697,18 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
 
     # Make a prediction using the trained model for the given feature vector
     def make_a_prediction(self):
+
         # Choose a random sample from the test features collection
-        sample_index = random.sample(range(len(self.training_features),
-                                           len(self.training_features) + len(self.test_features)),
-                                     1)[0]
+        # sample_index = random.sample(range(len(self.training_features),
+        #                                    len(self.training_features) + len(self.test_features)),
+        #                              1)[0]
+
+        # Here, positive classification has a different connotation - dominant classification ("no").
+        # In other words, negative classifications are less popular ("yes").
+        # Hard-coding the sample index to 4511 which has a classification of "yes" because positive classifications...
+        # ...are influenced by a lot of "normal" feature values while negative classifications are influenced by...
+        # ...a very small set of "abnormal" feature values.
+        sample_index = 4511
         feature_vector = self.test_features.loc[[sample_index]]
         # Return the instance for analysis
         return sample_index, feature_vector, self.model.predict(feature_vector)

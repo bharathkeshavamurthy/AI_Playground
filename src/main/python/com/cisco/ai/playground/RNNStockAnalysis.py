@@ -23,8 +23,8 @@ Change Log - 23-July-2019:
 2. CHECKPOINT_TRIGGER_FACTOR = 3000 [Inline with the modified member - NUMBER_OF_TRAINING_EPOCHS]
 {Fostering a compromise - a treaty between the limited storage on board the training machine and checkpoint diversity}
 
-3. Adding an additional RNN layer for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 5200
-                                                                     b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 3900
+3. Adding an additional RNN layer for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 6400
+                                                                     b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 4800
 
 4. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
 
@@ -32,9 +32,8 @@ Change Log - 23-July-2019:
 
 6. Introducing data shuffling for more randomized training -> one-step look-ahead in sequenced data allows shuffling
 
-TODO: Next Release [19.08] -
- 7. Deprecating the context window because temporal correlation beyond a one-step look-back MAY be affected by the
-     shuffling operation in the pre-processing routine
+7. Deprecating the context window because temporal correlation beyond a one-step look-back MAY be affected by the
+ shuffling operation in the pre-processing routine
 
 8. Modifying the steps_per_epoch field in the model.fit() routine because it was limiting the first time around
 
@@ -305,14 +304,10 @@ class RNNStockAnalysis(object):
     def compile(self):
         try:
             # The Adam Optimizer, Sparse Categorical Cross-Entropy Cost Function, and Visualization Cost Metrics
+            # I need the sparse_categorical_crossentropy metric for cost function progression visualization
             self.model.compile(optimizer=tensorflow.train.AdamOptimizer(),
-                               loss=self.cost_function)
-
-            # I don't need the metrics member any more...
-            # self.model.compile(optimizer=tensorflow.train.AdamOptimizer(),
-            #                    loss=self.cost_function,
-            #                    metrics=[tensorflow.keras.metrics.sparse_categorical_crossentropy])
-
+                               loss=self.cost_function,
+                               metrics=[tensorflow.keras.metrics.sparse_categorical_crossentropy])
             return True
         except Exception as e:
             print('[ERROR] RNNStockAnalysis compile: Exception caught while compiling the model - {}'.format(e))
@@ -387,31 +382,61 @@ class RNNStockAnalysis(object):
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1,
                                                          None]))
+
+            # --------------------------------- Context Window Logic ---------------------------------------------------
             # The tail-end look-back context for the initial look-ahead prediction
             # The cumulative context collection is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters...
             # ...of the training dataset
-            cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
+            # cumulative_context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
+            # Reset the states of the RNN
+            # modified_model.reset_states()
+            # Iterate through multiple predictions in a chain
+            # for i in range(self.LOOK_AHEAD_SIZE):
+            #     trigger = tensorflow.expand_dims(cumulative_context,
+            #                                      0)
+            #     prediction = modified_model(trigger)
+            #     # Remove the useless dimension
+            #     prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
+            #     # Use a multinomial distribution to determine the predicted value
+            #     predicted_price = tensorflow.multinomial(prediction,
+            #                                              num_samples=1)[-1, 0].numpy()
+            #     # Append the predicted value to the output collection
+            #     predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
+            #     # Context modification logic
+            #     # Add the predicted price to the context which would be used for the next iteration
+            #     cumulative_context = numpy.append(cumulative_context,
+            #                                       [predicted_price],
+            #                                       axis=0)
+            #     # Move the context window to include the latest prediction and discount the oldest contextual element
+            #     cumulative_context = cumulative_context[1:]
+
+            # ------------------------------------- Sequential Feedback Logic ------------------------------------------
+            # The training context is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters of the training
+            #  dataset
+            context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
+            print('[INFO] RNNStockAnalysis predict: The initial look-back context in the predict() routine is: '
+                  '\n[{}]'.format(context))
+            context = tensorflow.expand_dims(context,
+                                             0)
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
-                trigger = tensorflow.expand_dims(cumulative_context,
-                                                 0)
-                prediction = modified_model(trigger)
-                # Remove the useless dimension
-                prediction = tensorflow.squeeze(prediction, 0) / self.CHAOS_COEFFICIENT
+                prediction = modified_model(context)
+                # Remove the useless dimension and inject noise into the provided prediction in order to push it out...
+                # ...of saddle points
+                prediction = tensorflow.squeeze(prediction,
+                                                0) / self.CHAOS_COEFFICIENT
                 # Use a multinomial distribution to determine the predicted value
                 predicted_price = tensorflow.multinomial(prediction,
-                                                         num_samples=1)[-1, 0].numpy()
-                # Append the predicted value to the output collection
+                                                         num_samples=1)[-1,
+                                                                        0].numpy()
+                # Append the predicted_price to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
-                # Context modification logic
-                # Add the predicted price to the context which would be used for the next iteration
-                cumulative_context = numpy.append(cumulative_context,
-                                                  [predicted_price],
-                                                  axis=0)
-                # Move the context window to include the latest prediction and discount the oldest contextual element
-                cumulative_context = cumulative_context[1:]
+                # Context modification
+                context = tensorflow.expand_dims([predicted_price],
+                                                 0)
+
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace

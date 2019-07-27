@@ -17,13 +17,23 @@ Change Log - 23-July-2019:
 
 3. Fixing the bug in the global deregister() routine
 
-4. Increasing the number of training epochs in the NeuralNetworkClassificationEngine from 10 to 1000: Quadro P4000 run
+4. Increasing the number of training epochs in the NeuralNetworkClassificationEngine from 10 to 3000: Quadro P4000 run
 
-5. Lowering the kernel_width ($\\sigma^2$) for providing better weights to the closest neighbors
+5. Lowering the kernel_width ($\\sigma^2$) (to 0.2) for providing better weights to the closest neighbors
 
-6. Increasing the regularization_constant ($\\alpha$) to be more inline with the change in the kernel_width
+6. Increasing the regularization_constant ($\\alpha$) (to 150) to be more inline with the change in the kernel_width
 
-7. Adding a confusion matrix to visualize the number of false positives and the number of false negatives
+7. @ipasha: Adding a confusion matrix to visualize the number of false positives and the number of false negatives
+
+8. Using a predefined hard-coded sample index of 11516 to facilitate localized curve-fitting analysis for negative
+classifications only [allows for a reduced set of abnormal/anomalous feature values - narrows our focus]
+
+9. Increasing the batch size from 144 to 256 for reduced noise injection in the SGD process
+
+10. Increasing the number of training epochs for convergences that are more stable
+
+11. Changing the initial weights {to (60.0, 60.0)} in the PGD process during localized curve-fitting in order to get a
+better learning range and hence, more accurate weights for the local models under PGD optimization
 """
 
 # The imports
@@ -79,7 +89,7 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (10.4, -48.1)
+        self.initial_weights = (60.0, 60.0)
         # The intercept constraint in the given linear inequality, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -448,10 +458,10 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     NUMBER_OF_HIDDEN_UNITS_2 = 2048
 
     # The batch size for training (inject noise into the SGD process - leverage CUDA cores, if available)
-    BATCH_SIZE = 144
+    BATCH_SIZE = 256
 
     # The number of epochs to train the model
-    NUMBER_OF_TRAINING_EPOCHS = 1000
+    NUMBER_OF_TRAINING_EPOCHS = 3000
 
     # Process the data before feeding it into the Classifier
     def process_data(self, data, family):
@@ -648,6 +658,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             # Standard Training
             self.model.fit(self.training_features,
                            self.training_labels,
+                           batch_size=self.BATCH_SIZE,
                            epochs=self.NUMBER_OF_TRAINING_EPOCHS,
                            verbose=1)
             return True
@@ -686,9 +697,14 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
     # Make a prediction using the trained model for the given feature vector
     def make_a_prediction(self):
         # Choose a random sample from the test features collection
-        sample_index = random.sample(range(len(self.training_features),
-                                           len(self.training_features) + len(self.test_features)),
-                                     1)[0]
+        # sample_index = random.sample(range(len(self.training_features),
+        #                                    len(self.training_features) + len(self.test_features)),
+        #                              1)[0]
+
+        # Hard-coding the sample index to 11516 which has a classification of "down" because positive classifications...
+        # ...are influenced by a lot of "normal" feature values while negative classifications are influenced by...
+        # ...a very small set of "abnormal" feature values. This narrows down our focus.
+        sample_index = 11516
         feature_vector = self.test_features.loc[[sample_index]]
         # Return the instance for analysis
         return sample_index, feature_vector, self.model.predict(feature_vector)
