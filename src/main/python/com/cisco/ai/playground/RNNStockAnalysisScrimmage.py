@@ -10,19 +10,21 @@
 # TODO: A logging framework instead of all these formatted print statements
 
 """
-Change Log - 23-July-2019:
+Change Log - 29-July-2019:
 @author: Bharath Keshavamurthy <bkeshava at cisco dot com>
 
-1. Adding an additional RNN layer for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 5200
-                                                                     b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 3900
+1. Adding two additional RNN layers for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 3900
+                                                                       b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 2600
+                                                                       c. RNN_LAYER_3 => NUMBER_OF_RNN_UNITS_3 = 1300
 
-2. Deprecating the context window because temporal correlation beyond a one-step look-back MAY be affected by the
- shuffling operation in the pre-processing routine
+2. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
 
-3. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
+3. Changing the embedding size to 3000 from 2600 for better lower-dimensional representation for the vocab of size 9900
 
-TODO: Next Release [19.08]
- 4. Changing the embedding size to 3900 from 2600 for better lower-dimensional representation for the vocab of size 9900
+4. Adding a new parameter w.r.t the validation and/or testing phase - VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR (60%)
+
+5. Changing the look-back context logic in the predict() routine - this offers better accuracy according to my
+Scrimmage runs [window-size for the initial trigger = 0.6 * 10 = 6 => [6948 6953]]
 """
 
 # The imports
@@ -39,8 +41,8 @@ from collections import namedtuple
 tensorflow.enable_eager_execution()
 
 # Plotly user account credentials for visualization
-plotly.tools.set_credentials_file(username='bkeshava',
-                                  api_key='RHqYrDdThygiJEPiEW5S')
+plotly.tools.set_credentials_file(username='bkeshava_cisco',
+                                  api_key='CkvC8nBeRGGIPsnxKzri')
 
 
 # This class predicts the closing stock price of a company leveraging capabilities of RNNs in the...
@@ -83,22 +85,22 @@ class RNNStockAnalysisScrimmage(object):
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 2600
+    PROJECTED_VECTOR_SIZE = 3000
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of units in the first RNN layer
-    NUMBER_OF_RNN_UNITS_1 = 5200
+    NUMBER_OF_RNN_UNITS_1 = 3900
 
     # The number of units in the second RNN layer
-    NUMBER_OF_RNN_UNITS_2 = 3900
+    NUMBER_OF_RNN_UNITS_2 = 2600
 
     # The number of units in the third RNN layer
-    # NUMBER_OF_RNN_UNITS_3 = 2600
+    NUMBER_OF_RNN_UNITS_3 = 1300
 
     # Training data limit
-    TRAINING_DATA_LIMIT = 6955
+    TRAINING_DATA_LIMIT = 6954
 
     # Plotly Scatter mode
     PLOTLY_SCATTER_MODE = 'lines+markers'
@@ -110,7 +112,12 @@ class RNNStockAnalysisScrimmage(object):
 
     # Prediction randomness coefficient
     # This is called 'Temperature' in language modelling
-    CHAOS_COEFFICIENT = 0.10
+    # This parameter is no longer needed because we're using the tensorflow.nn.softmax function for analyzing the...
+    # ...logits provided by the model during the predict operation.
+    # CHAOS_COEFFICIENT = 1e-9
+
+    # The look-back context length factor for validation and/or testing - 60%
+    VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR = 0.6
 
     # The initialization sequence
     def __init__(self):
@@ -135,7 +142,8 @@ class RNNStockAnalysisScrimmage(object):
         )}
         # Load the data
         dataframe = pd.read_csv('datasets/csco.csv',
-                                usecols=[0, 4])
+                                usecols=[0,
+                                         4])
         # Rename the columns for aesthetics
         dataframe.columns = [self.DATE_COLUMN_KEY,
                              self.CLOSING_STOCK_PRICE_COLUMN_KEY]
@@ -158,11 +166,11 @@ class RNNStockAnalysisScrimmage(object):
         print('[INFO] RNNStockAnalysisScrimmage Initialization: Data Visualization Figure is available at {}'.format(
             initial_fig_url
         ))
-        # The data set for training - [0, 6955)
+        # The data set for training - [0, 6954)
         self.stock_prices_training = self.stock_prices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
         self.training_data = numpy.array([self.vocabulary_to_integer_mapping[x] for x in self.stock_prices_training])
-        # The data set for testing - [6955 6964]
+        # The data set for testing - [6954 6964]
         self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         self.stock_prices_testing = self.stock_prices.values[
                                     self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
@@ -214,15 +222,14 @@ class RNNStockAnalysisScrimmage(object):
                            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
                            recurrent_initializer='glorot_uniform',
                            stateful=True),
-
                 # RNN Layer 3
-                # custom_gru(self.NUMBER_OF_RNN_UNITS_3,
-                #            return_sequences=True,
-                #            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
-                #            # ...uniformly from...
-                #            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
-                #            recurrent_initializer='glorot_uniform',
-                #            stateful=True),
+                custom_gru(self.NUMBER_OF_RNN_UNITS_3,
+                           return_sequences=True,
+                           # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                           # ...uniformly from...
+                           # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                           recurrent_initializer='glorot_uniform',
+                           stateful=True),
 
                 # The Hinton dropout layer
                 # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
@@ -234,7 +241,8 @@ class RNNStockAnalysisScrimmage(object):
             # Print a summary of the designed model
             print('[INFO] RNNStockAnalysisScrimmage build: A summary of the designed model is given below...')
             model.summary()
-            self.model = (lambda: self.model, lambda: model)[initial_build]()
+            self.model = (lambda: self.model,
+                          lambda: model)[initial_build]()
             return True, model
         except Exception as e:
             print('[ERROR] RNNStockAnalysisScrimmage build: Exception caught while building the model - {}'.format(e))
@@ -248,15 +256,16 @@ class RNNStockAnalysisScrimmage(object):
         predicted_prices = []
         # GPU Availability - Check again in case something took up the discrete graphics capabilities of the machine
         self.gpu_availability = tensorflow.test.is_gpu_available()
-        print('[INFO] RNNStockAnalysisScrimmage Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
-        # Modify the model for a batch size of 1
+        print('[INFO] RNNStockAnalysis Initialization: GPU Availability - [{}]'.format(self.gpu_availability))
+        # Build a new model with a batch-size of 1 -> Load the weights from the trained model -> Reshape the input layer
         status, modified_model = self.build_model(initial_build=False,
                                                   batch_size=1)
         if status is False:
-            print('[ERROR] RNNStockAnalysisScrimmage predict: The operation failed due to previous errors!')
+            print('[ERROR] RNNStockAnalysis predict: The operation failed due to previous errors!')
             return
         try:
-            # Dynamic TODO: Modify the checkpoint to be loaded in this Scrimmage variant
+            # I might be loading a checkpoint where the model had a high loss, ...
+            # ...But I have a Scrimmage variant to offset this...
             modified_model.load_weights(tensorflow.train.latest_checkpoint(self.CHECKPOINT_DIRECTORY))
             modified_model.build(tensorflow.TensorShape([1,
                                                          None]))
@@ -291,32 +300,41 @@ class RNNStockAnalysisScrimmage(object):
             # ------------------------------------- Sequential Feedback Logic ------------------------------------------
             # The training context is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters of the training
             #  dataset
-            context = self.training_data[len(self.training_data) - self.LOOK_BACK_CONTEXT_LENGTH:]
-            print('[INFO] RNNStockAnalysis predict: The initial look-back context in the predict() routine is: '
-                  '\n[{}]'.format(context))
-            context = tensorflow.expand_dims(context,
-                                             0)
+            context = self.training_data[len(self.training_data) - int(
+                self.VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR * self.LOOK_AHEAD_SIZE):]
+
+            # print('[INFO] RNNStockAnalysis predict: The initial look-back context in the predict() routine is: '
+            #       '\n[{}]'.format(context))
+
             # Reset the states of the RNN
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
+                context = tensorflow.expand_dims(context,
+                                                 0)
                 prediction = modified_model(context)
                 # Remove the useless dimension and inject noise into the provided prediction in order to push it out...
                 # ...of saddle points
                 prediction = tensorflow.squeeze(prediction,
-                                                0) / self.CHAOS_COEFFICIENT
-                # Use a multinomial distribution to determine the predicted value
-                predicted_price = tensorflow.multinomial(prediction,
-                                                         num_samples=1)[-1,
-                                                                        0].numpy()
+                                                0)
+                # Use the tensorflow provided softmax function to convert the logits into probabilities and extract...
+                # ...the highest probability class from the multinomial output vector
+                predicted_price = numpy.argmax(
+                    tensorflow.nn.softmax(
+                        prediction[-1]
+                    )
+                )
                 # Append the predicted_price to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
-                # Context modification
-                context = tensorflow.expand_dims([predicted_price],
-                                                 0)
+                # Context modification Logic - Caching the most recent transaction and right-shifting the window...
+                context = numpy.append(tensorflow.squeeze(context,
+                                                          0),
+                                       [predicted_price],
+                                       axis=0)
+                context = context[1:]
 
         except Exception as e:
-            print('[ERROR] RNNStockAnalysisScrimmage predict: Exception caught during prediction - {}'.format(e))
+            print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
             # Detailed stack trace
             traceback.print_tb(e.__traceback__)
         return predicted_prices
