@@ -1,0 +1,61 @@
+(ai-gpu-playground) bkeshava@yocto-nxos-bld02:~/time-series-analysis/src/main/python/com/cisco/ai/playground/time-series-analysis$ python3.7 RNNStockAnalysisScrimmage.py > ./RNNStockAnalysisScrimmage.log
+2019-07-30 02:51:48.740959: I tensorflow/core/platform/cpu_feature_guard.cc:141] Your CPU supports instructions that this TensorFlow binary was not compiled to use: SSE4.1 SSE4.2 AVX AVX2 AVX512F FMA
+2019-07-30 02:51:48.797649: I tensorflow/core/platform/profile_utils/cpu_utils.cc:94] CPU Frequency: 2200000000 Hz
+2019-07-30 02:51:48.802401: I tensorflow/compiler/xla/service/service.cc:150] XLA service 0x558af03d0210 executing computations on platform Host. Devices:
+2019-07-30 02:51:48.802470: I tensorflow/compiler/xla/service/service.cc:158]   StreamExecutor device (0): <undefined>, <undefined>
+2019-07-30 02:51:49.530693: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1433] Found device 0 with properties:
+name: Quadro P4000 major: 6 minor: 1 memoryClockRate(GHz): 1.48
+pciBusID: 0000:18:00.0
+totalMemory: 7.93GiB freeMemory: 7.84GiB
+2019-07-30 02:51:49.530745: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1512] Adding visible gpu devices: 0
+2019-07-30 02:51:49.531704: I tensorflow/core/common_runtime/gpu/gpu_device.cc:984] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-07-30 02:51:49.531715: I tensorflow/core/common_runtime/gpu/gpu_device.cc:990]      0
+2019-07-30 02:51:49.531722: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1003] 0:   N
+2019-07-30 02:51:49.531823: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/device:GPU:0 with 7628 MB memory) -> physical GPU (device: 0, name: Quadro P4000, pci bus id: 0000:18:00.0, compute capability: 6.1)
+2019-07-30 02:51:49.533779: I tensorflow/compiler/xla/service/service.cc:150] XLA service 0x558af0b524e0 executing computations on platform CUDA. Devices:
+2019-07-30 02:51:49.533797: I tensorflow/compiler/xla/service/service.cc:158]   StreamExecutor device (0): Quadro P4000, Compute Capability 6.1
+2019-07-30 02:51:49.535595: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1512] Adding visible gpu devices: 0
+2019-07-30 02:51:49.535662: I tensorflow/core/common_runtime/gpu/gpu_device.cc:984] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-07-30 02:51:49.535687: I tensorflow/core/common_runtime/gpu/gpu_device.cc:990]      0
+2019-07-30 02:51:49.535709: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1003] 0:   N
+2019-07-30 02:51:49.535893: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/device:GPU:0 with 7628 MB memory) -> physical GPU (device: 0, name: Quadro P4000, pci bus id: 0000:18:00.0, compute capability: 6.1)
+2019-07-30 02:51:49.538434: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1512] Adding visible gpu devices: 0
+2019-07-30 02:51:49.538458: I tensorflow/core/common_runtime/gpu/gpu_device.cc:984] Device interconnect StreamExecutor with strength 1 edge matrix:
+2019-07-30 02:51:49.538480: I tensorflow/core/common_runtime/gpu/gpu_device.cc:990]      0
+2019-07-30 02:51:49.538486: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1003] 0:   N
+2019-07-30 02:51:49.538552: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1115] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 7628 MB memory) -> physical GPU (device: 0, name: Quadro P4000, pci bus id: 0000:18:00.0, compute capability: 6.1)
+WARNING:tensorflow:From /home/bkeshava/anaconda3/envs/ai-gpu-playground/lib/python3.7/site-packages/tensorflow/python/ops/embedding_ops.py:132: colocate_with (from tensorflow.python.framework.ops) is deprecated and will be removed in a future version.
+Instructions for updating:
+Colocations handled automatically by placer.
+2019-07-30 02:51:53.124894: I tensorflow/stream_executor/dso_loader.cc:152] successfully opened CUDA library libcublas.so.10.0 locally
+[INFO] RNNStockAnalysisScrimmage Trigger: Starting system assessment!
+[INFO] RNNStockAnalysisScrimmage Initialization: Bringing things up...
+High five! You successfully sent some data to your account on plotly. View your plot in your browser at https://plot.ly/~bkeshava_cisco/0 or inside your plot.ly account where it is named 'CISCO_Variations_In_Stock_Price'
+[INFO] RNNStockAnalysisScrimmage Initialization: Data Visualization Figure is available at https://plot.ly/~bkeshava_cisco/0
+[INFO] RNNStockAnalysisScrimmage Initialization: GPU Availability - [True]
+[INFO] RNNStockAnalysis Initialization: GPU Availability - [True]
+[INFO] RNNStockAnalysisScrimmage build: A summary of the designed model is given below...
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #
+=================================================================
+embedding (Embedding)        (1, None, 3000)           29700000
+_________________________________________________________________
+cu_dnngru (CuDNNGRU)         (1, None, 3900)           80753400
+_________________________________________________________________
+cu_dnngru_1 (CuDNNGRU)       (1, None, 2600)           50715600
+_________________________________________________________________
+cu_dnngru_2 (CuDNNGRU)       (1, None, 1300)           15217800
+_________________________________________________________________
+dense (Dense)                (1, None, 9900)           12879900
+=================================================================
+Total params: 189,266,700
+Trainable params: 189,266,700
+Non-trainable params: 0
+_________________________________________________________________
+[INFO] RNNStockAnalysisScrimmage visualize_predictions: Look-back Context Length - [65]
+[INFO] RNNStockAnalysisScrimmage visualize_predictions: Look-ahead Size - [10]
+[INFO] RNNStockAnalysisScrimmage visualize_predictions: The true stock prices are -
+[34.04, 34.15, 34.62, 34.21, 34.47, 34.41, 34.38, 34.5, 34.05, 33.99]
+[INFO] RNNStockAnalysisScrimmage visualize_predictions: The predicted prices are  -
+[31.42, 57.27, 33.78, 33.78, 33.78, 33.78, 33.78, 33.78, 33.78, 33.78]
+[INFO] RNNStockAnalysisScrimmage visualize_predictions: The final prediction analysis visualization figure is available at https://plot.ly/~bkeshava_cisco/2

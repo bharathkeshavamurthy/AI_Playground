@@ -1,0 +1,151 @@
+Epoch 5000/5000
+3616/3616 [==============================] - 0s 17us/sample - loss: 0.1281 - acc: 0.9522
+[INFO] NeuralNetworkClassificationEngine evaluate: The confusion matrix with respect to the test data is: 
+[[794   0]
+ [110   1]]
+[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample instance under rationale analysis - 
+Features = 
++------+-------+-------------+------------------+-------------+-----------+-----------+-----------+--------+-----------+-------+---------+------------+------------+-----------+------------+----------------+
+|      |   Age | Job         | Marital-Status   | Education   | Default   |   Balance | Housing   | Loan   | Contact   |   Day | Month   |   Duration |   Campaign |   PayDays |   Previous | Paid-Outcome   |
+|------+-------+-------------+------------------+-------------+-----------+-----------+-----------+--------+-----------+-------+---------+------------+------------+-----------+------------+----------------|
+| 4511 |    46 | blue-collar | married          | secondary   | no        |       668 | yes       | no     | unknown   |    15 | may     |       1263 |          2 |        -1 |          0 | unknown        |
++------+-------+-------------+------------------+-------------+-----------+-----------+-----------+--------+-----------+-------+---------+------------+------------+-----------+------------+----------------+ and 
+True Label = 1
+[INFO] PredictionRationaleEngine get_interpretable_explanation: Sample normalized prediction instance under rationale analysis - 
+Features = 
++------+-----------+----------+------------------+-------------+-----------+-----------+-----------+--------+-----------+-----------+----------+------------+------------+-----------+------------+----------------+
+|      |       Age |      Job |   Marital-Status |   Education |   Default |   Balance |   Housing |   Loan |   Contact |       Day |    Month |   Duration |   Campaign |   PayDays |   Previous |   Paid-Outcome |
+|------+-----------+----------+------------------+-------------+-----------+-----------+-----------+--------+-----------+-----------+----------+------------+------------+-----------+------------+----------------|
+| 4511 | -0.310253 | -1.30357 |                0 |   -0.447214 |        -1 | -0.435773 |         1 |     -1 |   1.22474 | -0.111803 | 0.724207 |    1.56775 |   -1.57044 |  -1.72613 |   -1.66132 |        1.34164 |
++------+-----------+----------+------------------+-------------+-----------+-----------+-----------+--------+-----------+-----------+----------+------------+------------+-----------+------------+----------------+ and 
+Predicted Label = 0
+[DEBUG] PredictionRationaleEngine get_interpretable_explanation: Analyzing locally interpretable linear models: Completed model analysis for ('Previous', 'Paid-Outcome') - [------------------->] 100.0%
+[INFO] PredictionRationaleEngine get_interpretable_explanation: Completed locally interpretable linear model analyses for all possible feature family tuples of length 2. Finding the best explanation among these analyzed models...
+[INFO] PredictionRationaleEngine Explanation: The locally interpretable explanation for the classifier [NeuralNetworkClassificationEngine] with ID [NN_CLASSIFIER_1] is described by [('Education', 'Month')] whose loss from local curve fitting is [6.654014635815934e-20] and whose respective associated weights are given by [(1.4373487903939205e-11, 1.4729464796296556e-11)].
+[INFO] PredictionRationaleEngine Explanation: The models are ranked in the increasing order of their converged loss function values below.
+1. Causes: ('Education', 'Month'), Loss: 6.654014635815934e-20, Weights: (1.4373487903939205e-11, 1.4729464796296556e-11)
+2. Causes: ('Day', 'PayDays'), Loss: 8.665331117455358e-20, Weights: (1.1018781464723709e-11, 2.072331210496466e-11)
+3. Causes: ('Balance', 'PayDays'), Loss: 9.311630404635228e-20, Weights: (2.2446696296326184e-11, 9.127260784007404e-12)
+4. Causes: ('Contact', 'Campaign'), Loss: 9.422019797123579e-20, Weights: (1.962943686863826e-11, 1.4643711010184943e-11)
+5. Causes: ('Job', 'Balance'), Loss: 9.453100172352953e-20, Weights: (1.7847951957646138e-11, 1.6889033560236562e-11)
+6. Causes: ('Balance', 'Campaign'), Loss: 9.486359617799657e-20, Weights: (1.29124205789462e-11, 2.0938523751600588e-11)
+7. Causes: ('Campaign', 'Paid-Outcome'), Loss: 9.504135526183584e-20, Weights: (1.7955563735338487e-11, 1.6766319824841054e-11)
+8. Causes: ('Duration', 'Previous'), Loss: 9.526200281597698e-20, Weights: (1.3366344079983573e-11, 2.066416053746474e-11)
+9. Causes: ('PayDays', 'Previous'), Loss: 9.633408185865427e-20, Weights: (1.727840174940901e-11, 1.8007983585437666e-11)
+10. Causes: ('Housing', 'Previous'), Loss: 9.662872056876375e-20, Weights: (1.8006166408906898e-11, 1.7651220439542715e-11)
+11. Causes: ('Default', 'Balance'), Loss: 9.813478121692561e-20, Weights: (1.0698398126844601e-11, 2.2656402806402188e-11)
+12. Causes: ('Job', 'Loan'), Loss: 9.841148751311941e-20, Weights: (1.8819504631995686e-11, 1.6735413342579006e-11)
+13. Causes: ('Education', 'PayDays'), Loss: 9.852024434117064e-20, Weights: (2.0587012705866473e-11, 1.4505809993978102e-11)
+14. Causes: ('Default', 'Month'), Loss: 9.990958432343317e-20, Weights: (2.0776628072186527e-11, 1.4293335023370897e-11)
+15. Causes: ('Job', 'Day'), Loss: 1.019520328475512e-19, Weights: (1.6045425705826742e-11, 2.0150838155473622e-11)
+16. Causes: ('Balance', 'Paid-Outcome'), Loss: 1.0364659190053989e-19, Weights: (1.900940229766646e-11, 1.7442991317479245e-11)
+17. Causes: ('Housing', 'Day'), Loss: 1.039383151227791e-19, Weights: (2.0485951898401048e-11, 1.58936616154023e-11)
+18. Causes: ('Month', 'Campaign'), Loss: 1.0550953806953174e-19, Weights: (1.9149180258302696e-11, 1.7722914952686426e-11)
+19. Causes: ('Day', 'Paid-Outcome'), Loss: 1.0551943285917164e-19, Weights: (1.991450809050931e-11, 1.670010049986176e-11)
+20. Causes: ('Loan', 'Duration'), Loss: 1.0662305647880631e-19, Weights: (2.203345116658776e-11, 1.4268970704035404e-11)
+21. Causes: ('Default', 'Paid-Outcome'), Loss: 1.0840686284987748e-19, Weights: (1.8251500408797333e-11, 1.945716847765296e-11)
+22. Causes: ('Housing', 'PayDays'), Loss: 1.1120977691422893e-19, Weights: (1.642921023419562e-11, 2.135760374986671e-11)
+23. Causes: ('Default', 'Contact'), Loss: 1.1166832611661472e-19, Weights: (2.10784865114797e-11, 1.6604509009362384e-11)
+24. Causes: ('Housing', 'Month'), Loss: 1.1227804712300106e-19, Weights: (1.7376234075641117e-11, 2.0760621434833595e-11)
+25. Causes: ('Housing', 'Contact'), Loss: 1.1260193296121711e-19, Weights: (1.8924641120243163e-11, 1.957558376612812e-11)
+26. Causes: ('Job', 'Housing'), Loss: 1.1421419863241583e-19, Weights: (1.7887892008851547e-11, 2.0488110860896982e-11)
+27. Causes: ('Job', 'Contact'), Loss: 1.1422697165807734e-19, Weights: (1.7736930892701938e-11, 2.0489420710023898e-11)
+28. Causes: ('Day', 'Previous'), Loss: 1.143458963119422e-19, Weights: (2.153551408342897e-11, 1.6727147081674687e-11)
+29. Causes: ('PayDays', 'Paid-Outcome'), Loss: 1.144724346326271e-19, Weights: (1.4569995098932483e-11, 2.2985432449827444e-11)
+30. Causes: ('Month', 'Paid-Outcome'), Loss: 1.1493658475666558e-19, Weights: (1.9881660264012776e-11, 1.9176823994138754e-11)
+31. Causes: ('Balance', 'Duration'), Loss: 1.1571302805359966e-19, Weights: (1.52701600062073e-11, 2.2839312093411596e-11)
+32. Causes: ('Campaign', 'Previous'), Loss: 1.164244053871873e-19, Weights: (1.431581909144124e-11, 2.3383938739153376e-11)
+33. Causes: ('Loan', 'Month'), Loss: 1.167229596024386e-19, Weights: (1.8065669421645924e-11, 2.0654199801262073e-11)
+34. Causes: ('Job', 'Education'), Loss: 1.167699828839819e-19, Weights: (1.8990894702132297e-11, 1.9797431714776595e-11)
+35. Causes: ('Age', 'Campaign'), Loss: 1.244609008090312e-19, Weights: (2.1894375070541695e-11, 1.8486212277253024e-11)
+36. Causes: ('Housing', 'Paid-Outcome'), Loss: 1.2501407319459748e-19, Weights: (1.9640380910884294e-11, 2.066303153614436e-11)
+37. Causes: ('Default', 'PayDays'), Loss: 1.267052690026676e-19, Weights: (1.739509902425923e-11, 2.2830629181463508e-11)
+38. Causes: ('Age', 'PayDays'), Loss: 1.273948157310845e-19, Weights: (1.8300362633936403e-11, 2.243955725498391e-11)
+39. Causes: ('Day', 'Month'), Loss: 1.2960662997269828e-19, Weights: (1.691244239439043e-11, 2.3629665229921935e-11)
+40. Causes: ('Campaign', 'PayDays'), Loss: 1.3077909159503472e-19, Weights: (1.6978558304813717e-11, 2.3853321491849074e-11)
+41. Causes: ('Day', 'Campaign'), Loss: 1.3200901743248844e-19, Weights: (2.4375950487575187e-11, 1.644278038494818e-11)
+42. Causes: ('Job', 'Default'), Loss: 1.3392320715946439e-19, Weights: (2.311771103902653e-11, 1.8700783710175734e-11)
+43. Causes: ('Duration', 'PayDays'), Loss: 1.351487656745428e-19, Weights: (1.6953089975337016e-11, 2.445041538672237e-11)
+44. Causes: ('Balance', 'Housing'), Loss: 1.3587786960499693e-19, Weights: (2.4455028227829226e-11, 1.72940897583022e-11)
+45. Causes: ('Job', 'Marital-Status'), Loss: 1.3874426564657423e-19, Weights: (1.976456631900732e-11, 2.2945219926970242e-11)
+46. Causes: ('Previous', 'Paid-Outcome'), Loss: 1.3874790109152507e-19, Weights: (1.7888900768598735e-11, 2.4391634763497928e-11)
+47. Causes: ('Job', 'Month'), Loss: 1.4282391071425537e-19, Weights: (2.2890098845653378e-11, 2.0339763770309803e-11)
+48. Causes: ('Default', 'Campaign'), Loss: 1.4441131657064497e-19, Weights: (2.0796690128928116e-11, 2.277054384864576e-11)
+49. Causes: ('Balance', 'Previous'), Loss: 1.5071006441107394e-19, Weights: (2.2232748517840034e-11, 2.204322821500794e-11)
+50. Causes: ('Default', 'Day'), Loss: 2.6322161266416955e-19, Weights: (2.9026843539353185e-11, 2.909137139762453e-11)
+51. Causes: ('Default', 'Housing'), Loss: 2.715653092047023e-19, Weights: (2.948006331437464e-11, 2.948006331437464e-11)
+52. Causes: ('Housing', 'Loan'), Loss: 2.9270955953901323e-19, Weights: (3.068534831259904e-11, 3.068534831259904e-11)
+53. Causes: ('Default', 'Loan'), Loss: 3.077428260948803e-19, Weights: (3.1584645919017295e-11, 3.1584645919017295e-11)
+54. Causes: ('Duration', 'Campaign'), Loss: 0.04444599391477264, Weights: (0.0005239124176570287, -0.0005050677021983951)
+55. Causes: ('Month', 'Previous'), Loss: 0.5730179913789402, Weights: (0.006173210303154064, 0.0008007271034555434)
+56. Causes: ('Duration', 'Paid-Outcome'), Loss: 0.7592599091208997, Weights: (0.00891877446619696, -0.002214426353815091)
+57. Causes: ('Education', 'Campaign'), Loss: 1.8833909499074608, Weights: (-0.01825631367928414, -0.02188494156103488)
+58. Causes: ('Education', 'Duration'), Loss: 2.010594731992792, Weights: (-0.019216834715552553, 0.02428409161059212)
+59. Causes: ('Job', 'Duration'), Loss: 4.390986305552274, Weights: (-0.0469277560406885, 0.051082105778786524)
+60. Causes: ('Balance', 'Month'), Loss: 5.310195807088579, Weights: (-0.04962222020965618, 0.013298214213126026)
+61. Causes: ('Age', 'Duration'), Loss: 5.425040640433175, Weights: (-0.062443493523426846, 0.060515104743245625)
+62. Causes: ('Month', 'PayDays'), Loss: 5.615017635506009, Weights: (0.06676769932888967, 0.05537812095045713)
+63. Causes: ('Contact', 'Duration'), Loss: 5.968059580751983, Weights: (-0.030350086700049992, 0.07611428029630218)
+64. Causes: ('Balance', 'Contact'), Loss: 6.2372204763718155, Weights: (-0.07502054712356121, -0.0618714960576964)
+65. Causes: ('Housing', 'Campaign'), Loss: 8.459470168182136, Weights: (0.07460892374522325, -0.10898373614867067)
+66. Causes: ('Contact', 'PayDays'), Loss: 12.039976235094414, Weights: (-0.12075822026191589, 0.15014324163066745)
+67. Causes: ('Contact', 'Previous'), Loss: 12.392810521341378, Weights: (-0.1503186942379259, -0.13172661302986036)
+68. Causes: ('Age', 'Previous'), Loss: 12.488755808532545, Weights: (0.16111250611330913, 0.11429027995449546)
+69. Causes: ('Loan', 'Day'), Loss: 13.44068675771397, Weights: (-0.1439944732761279, 0.176006801382454)
+70. Causes: ('Age', 'Paid-Outcome'), Loss: 13.58462402701224, Weights: (0.1851265253850887, -0.05437805832374552)
+71. Causes: ('Loan', 'Contact'), Loss: 14.340996308758442, Weights: (-0.16372652091631906, -0.1984857410961144)
+72. Causes: ('Education', 'Paid-Outcome'), Loss: 14.435492604722869, Weights: (-0.00012978915773860996, 0.17043688130464554)
+73. Causes: ('Age', 'Balance'), Loss: 15.173149587751386, Weights: (0.20964047338372113, -0.0607951045251532)
+74. Causes: ('Contact', 'Paid-Outcome'), Loss: 15.450803397071763, Weights: (-0.20978955166892374, -0.1542639490618381)
+75. Causes: ('Month', 'Duration'), Loss: 16.356258159654637, Weights: (0.12265360752216813, 0.1819814529323952)
+76. Causes: ('Default', 'Previous'), Loss: 16.57591618624719, Weights: (-0.14669363214405043, 0.11613956545687222)
+77. Causes: ('Day', 'Duration'), Loss: 16.881113626619086, Weights: (0.004335179001207102, 0.24163526759804255)
+78. Causes: ('Default', 'Duration'), Loss: 17.651265014123343, Weights: (-0.1402373071298159, 0.23574245191907484)
+79. Causes: ('Housing', 'Duration'), Loss: 18.057593928142552, Weights: (0.04844559932670602, 0.2623351412466332)
+80. Causes: ('Loan', 'Campaign'), Loss: 18.44011025255827, Weights: (-0.21753635381406697, -0.21316906835337782)
+81. Causes: ('Education', 'Day'), Loss: 20.16282941643917, Weights: (0.11110821378335091, 0.048808319194557324)
+82. Causes: ('Age', 'Loan'), Loss: 23.07612474013457, Weights: (0.34507122444085525, 0.025602330581556854)
+83. Causes: ('Balance', 'Day'), Loss: 23.122018548287997, Weights: (-0.08544477428168822, -0.3270498249361874)
+84. Causes: ('Age', 'Month'), Loss: 30.250305406101642, Weights: (0.09735744764822685, 0.1222571187907426)
+85. Causes: ('Balance', 'Loan'), Loss: 32.11987793076569, Weights: (-0.14975957661146244, -0.3960197556033456)
+86. Causes: ('Age', 'Day'), Loss: 34.25339863313677, Weights: (0.3230480554890754, -0.07090364014201422)
+87. Causes: ('Marital-Status', 'Paid-Outcome'), Loss: 37.23574010045338, Weights: (0.3015177257467755, 0.2605405111265775)
+88. Causes: ('Contact', 'Day'), Loss: 37.28703673502082, Weights: (-0.4079717824019152, -0.11389954721039805)
+89. Causes: ('Marital-Status', 'PayDays'), Loss: 38.90688810515187, Weights: (0.34203190149586016, -0.2193410353809663)
+90. Causes: ('Education', 'Contact'), Loss: 39.09408178524173, Weights: (0.13837376828248596, -0.19404177114888468)
+91. Causes: ('Education', 'Previous'), Loss: 39.57672908093737, Weights: (0.04182369729635291, -0.008865667453276585)
+92. Causes: ('Contact', 'Month'), Loss: 43.26625283610465, Weights: (-0.2762724312985272, 0.16481365518974517)
+93. Causes: ('Age', 'Education'), Loss: 57.83114864825371, Weights: (-0.019346725549821094, -0.3160263612229156)
+94. Causes: ('Age', 'Job'), Loss: 61.48508228361718, Weights: (0.1493040195664132, 0.13675855666130862)
+95. Causes: ('Job', 'Campaign'), Loss: 63.10134853436612, Weights: (-0.05677331510233777, -0.4044143926098988)
+96. Causes: ('Loan', 'PayDays'), Loss: 63.94925311918472, Weights: (-0.39483160416756774, 0.1357496674038162)
+97. Causes: ('Age', 'Default'), Loss: 64.55644014422808, Weights: (0.1402796596889189, -0.3927473888743808)
+98. Causes: ('Education', 'Loan'), Loss: 67.14642283114915, Weights: (0.2260604324830116, 0.00358463783400992)
+99. Causes: ('Age', 'Housing'), Loss: 67.43495594803485, Weights: (0.16581694450636206, -0.37361788106016214)
+100. Causes: ('Age', 'Marital-Status'), Loss: 76.23499762922776, Weights: (0.38863967982816705, -0.031076209613673234)
+101. Causes: ('Marital-Status', 'Previous'), Loss: 76.62324706506526, Weights: (0.3193129203826544, 0.08830244292906657)
+102. Causes: ('Education', 'Housing'), Loss: 87.75897585361587, Weights: (0.1702892161396585, 0.13426890574839126)
+103. Causes: ('Education', 'Default'), Loss: 93.95380823756257, Weights: (0.2142661329236541, 0.2594501272876925)
+104. Causes: ('Age', 'Contact'), Loss: 94.0417679863875, Weights: (0.10634316311663244, -0.31264749465493274)
+105. Causes: ('Marital-Status', 'Education'), Loss: 94.32328775650616, Weights: (0.006240373707122764, -0.34048216739765547)
+106. Causes: ('Marital-Status', 'Duration'), Loss: 99.4935265114878, Weights: (-0.005319706484703104, 0.3108097452536637)
+107. Causes: ('Marital-Status', 'Loan'), Loss: 113.28447217107457, Weights: (-0.1999046660708841, -0.17520684562348296)
+108. Causes: ('Loan', 'Paid-Outcome'), Loss: 123.54774854875888, Weights: (-0.12300411362375392, -0.16655530046644748)
+109. Causes: ('Education', 'Balance'), Loss: 123.59639873048125, Weights: (0.13507999960475411, 0.14200495129764545)
+110. Causes: ('Job', 'Paid-Outcome'), Loss: 128.04386717434764, Weights: (-0.09595354244887286, 0.054100417961313124)
+111. Causes: ('Marital-Status', 'Campaign'), Loss: 129.3812299363676, Weights: (0.1200835077861881, -0.11736709825096181)
+112. Causes: ('Loan', 'Previous'), Loss: 132.76254186907732, Weights: (-0.08494870623707892, -0.12661998894622647)
+113. Causes: ('Marital-Status', 'Month'), Loss: 144.0222353109282, Weights: (0.020491927982386752, 0.04112355820176227)
+114. Causes: ('Marital-Status', 'Day'), Loss: 148.27054080339977, Weights: (0.00425274586807649, 0.03083593254539296)
+115. Causes: ('Job', 'PayDays'), Loss: 148.3369928614785, Weights: (0.01269401384410563, 0.01852970241890438)
+116. Causes: ('Marital-Status', 'Contact'), Loss: 148.3572419299478, Weights: (-0.019173473201006607, -0.0032779771393131782)
+117. Causes: ('Marital-Status', 'Balance'), Loss: 148.39474254806174, Weights: (0.007561429787645932, 0.008099117890323507)
+118. Causes: ('Marital-Status', 'Default'), Loss: 148.40420766753158, Weights: (-0.001608444120814993, 0.007573208919954632)
+119. Causes: ('Job', 'Previous'), Loss: 148.40513643501706, Weights: (-0.0011806428992311086, 0.007298701861257585)
+120. Causes: ('Marital-Status', 'Housing'), Loss: 148.41160535681388, Weights: (0.00047905709419155025, 0.003198239851377796)
+[INFO] PredictionRationaleEngine Initialization: Classifier tagging status - [True]
+[INFO] PredictionRationaleEngine Initialization: All registered classifiers have been tagged and their prediction rationales have been explained. Final status: [True]
+[INFO] PredictionRationaleEngine Trigger: Prediction Rationale Analysis is Successful!
+[INFO] PredictionRationaleEngine Trigger: System assessment has been completed!
+
+Process finished with exit code 0
