@@ -13,18 +13,16 @@
 Change Log - 29-July-2019:
 @author: Bharath Keshavamurthy <bkeshava at cisco dot com>
 
-1. Adding two additional RNN layers for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 3900
-                                                                       b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 2600
-                                                                       c. RNN_LAYER_3 => NUMBER_OF_RNN_UNITS_3 = 1300
+1. Adding three additional RNN layers for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 3900
+                                                                         b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 2600
+                                                                         c. RNN_LAYER_3 => NUMBER_OF_RNN_UNITS_3 = 1300
+                                                                         d. RNN_LAYER_4 => NUMBER_OF_RNN_UNITS_4 = 650
 
 2. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
 
-3. Changing the embedding size to 3000 from 2600 for better lower-dimensional representation for the vocab of size 9900
+3. Changing the embedding size to 3900 from 2600 for better lower-dimensional representation for the vocab of size 9900
 
-4. Adding a new parameter w.r.t the validation and/or testing phase - VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR (60%)
-
-5. Changing the look-back context logic in the predict() routine - this offers better accuracy according to my
-Scrimmage runs [window-size for the initial trigger = 0.6 * 10 = 6 => [6948 6953]]
+4. Changing the look-back context logic in the predict() routine - single step look-back with feed-forward
 """
 
 # The imports
@@ -60,7 +58,7 @@ class RNNStockAnalysisScrimmage(object):
     # This seems to be the best mini_batch_size for injecting the appropriate amount of noise into the SGD process...
     # ...in order to prevent it from settling down at a saddle point.
     # Furthermore, we can better leverage the CUDA capabilities of the NVIDIA GPU if mini_batch_size > 32.
-    # Everything constitutes one batch leading to one step per epoch.
+    # 105 => Everything constitutes one batch leading to one step per epoch.
     BATCH_SIZE = 105
 
     # (1 - DROPOUT_RATE)
@@ -85,7 +83,7 @@ class RNNStockAnalysisScrimmage(object):
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 3000
+    PROJECTED_VECTOR_SIZE = 3900
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
@@ -98,6 +96,9 @@ class RNNStockAnalysisScrimmage(object):
 
     # The number of units in the third RNN layer
     NUMBER_OF_RNN_UNITS_3 = 1300
+
+    # The number of units in the fourth RNN layer
+    NUMBER_OF_RNN_UNITS_4 = 650
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6954
@@ -117,7 +118,7 @@ class RNNStockAnalysisScrimmage(object):
     # CHAOS_COEFFICIENT = 1e-9
 
     # The look-back context length factor for validation and/or testing - 60%
-    VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR = 0.6
+    # VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR = 0.6
 
     # The initialization sequence
     def __init__(self):
@@ -183,7 +184,8 @@ class RNNStockAnalysisScrimmage(object):
     # Build the model using RNN layers from Keras
     def build_model(self, initial_build=True, batch_size=None):
         try:
-            batch_size = (lambda: self.BATCH_SIZE, lambda: batch_size)[initial_build is False]()
+            batch_size = (lambda: self.BATCH_SIZE,
+                          lambda: batch_size)[initial_build is False]()
 
             # GPU - CuDNNGRU: The NVIDIA Compute Unified Device Architecture (CUDA) based Deep Neural Network library...
             # ... is a GPU accelerated library of primitives for Deep Neural Networks.
@@ -224,6 +226,14 @@ class RNNStockAnalysisScrimmage(object):
                            stateful=True),
                 # RNN Layer 3
                 custom_gru(self.NUMBER_OF_RNN_UNITS_3,
+                           return_sequences=True,
+                           # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                           # ...uniformly from...
+                           # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                           recurrent_initializer='glorot_uniform',
+                           stateful=True),
+                # RNN Layer 4
+                custom_gru(self.NUMBER_OF_RNN_UNITS_4,
                            return_sequences=True,
                            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
                            # ...uniformly from...
@@ -300,8 +310,41 @@ class RNNStockAnalysisScrimmage(object):
             # ------------------------------------- Sequential Feedback Logic ------------------------------------------
             # The training context is initialized to the last <self.LOOK_BACK_CONTEXT_LENGTH> characters of the training
             #  dataset
-            context = self.training_data[len(self.training_data) - int(
-                self.VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR * self.LOOK_AHEAD_SIZE):]
+            # context = self.training_data[len(self.training_data) - int(
+            #     self.VALIDATION_LOOK_BACK_CONTEXT_LENGTH_FACTOR * self.LOOK_AHEAD_SIZE):]
+            #
+            # # print('[INFO] RNNStockAnalysis predict: The initial look-back context in the predict() routine is: '
+            # #       '\n[{}]'.format(context))
+            #
+            # # Reset the states of the RNN
+            # modified_model.reset_states()
+            # # Iterate through multiple predictions in a chain
+            # for i in range(self.LOOK_AHEAD_SIZE):
+            #     context = tensorflow.expand_dims(context,
+            #                                      0)
+            #     prediction = modified_model(context)
+            #     # Remove the useless dimension
+            #     prediction = tensorflow.squeeze(prediction,
+            #                                     0)
+            #     # Use the tensorflow provided softmax function to convert the logits into probabilities and extract...
+            #     # ...the highest probability class from the multinomial output vector
+            #     predicted_price = numpy.argmax(
+            #         tensorflow.nn.softmax(
+            #             prediction[-1]
+            #         )
+            #     )
+            #     # Append the predicted_price to the output collection
+            #     predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
+            #     # Context modification Logic - Caching the most recent transaction and right-shifting the window...
+            #     context = numpy.append(tensorflow.squeeze(context,
+            #                                               0),
+            #                            [predicted_price],
+            #                            axis=0)
+            #     context = context[1:]
+
+            # --------------------------------------Simple Feed-Forward Logic-------------------------------------------
+            # The trigger carried forward from the training dataset
+            context = self.training_data[-1]
 
             # print('[INFO] RNNStockAnalysis predict: The initial look-back context in the predict() routine is: '
             #       '\n[{}]'.format(context))
@@ -310,11 +353,10 @@ class RNNStockAnalysisScrimmage(object):
             modified_model.reset_states()
             # Iterate through multiple predictions in a chain
             for i in range(self.LOOK_AHEAD_SIZE):
-                context = tensorflow.expand_dims(context,
+                context = tensorflow.expand_dims([context],
                                                  0)
                 prediction = modified_model(context)
-                # Remove the useless dimension and inject noise into the provided prediction in order to push it out...
-                # ...of saddle points
+                # Remove the useless dimension
                 prediction = tensorflow.squeeze(prediction,
                                                 0)
                 # Use the tensorflow provided softmax function to convert the logits into probabilities and extract...
@@ -326,12 +368,8 @@ class RNNStockAnalysisScrimmage(object):
                 )
                 # Append the predicted_price to the output collection
                 predicted_prices.append(self.integer_to_vocabulary_mapping[predicted_price])
-                # Context modification Logic - Caching the most recent transaction and right-shifting the window...
-                context = numpy.append(tensorflow.squeeze(context,
-                                                          0),
-                                       [predicted_price],
-                                       axis=0)
-                context = context[1:]
+                # Context modification Logic - Feed-Forward
+                context = predicted_price
 
         except Exception as e:
             print('[ERROR] RNNStockAnalysis predict: Exception caught during prediction - {}'.format(e))
