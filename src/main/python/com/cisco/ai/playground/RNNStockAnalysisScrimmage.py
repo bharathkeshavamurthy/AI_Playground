@@ -13,14 +13,13 @@
 Change Log - 29-July-2019:
 @author: Bharath Keshavamurthy <bkeshava at cisco dot com>
 
-1. Adding three additional RNN layers for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 3900
-                                                                         b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 2600
-                                                                         c. RNN_LAYER_3 => NUMBER_OF_RNN_UNITS_3 = 1300
-                                                                         d. RNN_LAYER_4 => NUMBER_OF_RNN_UNITS_4 = 650
+1. Adding two additional RNN layers for better correlation tracking -> a. RNN_LAYER_1 => NUMBER_OF_RNN_UNITS_1 = 5100
+                                                                       b. RNN_LAYER_2 => NUMBER_OF_RNN_UNITS_2 = 3400
+                                                                       c. RNN_LAYER_3 => NUMBER_OF_RNN_UNITS_3 = 1700
 
 2. Changing the BATCH_SIZE to 105 from 65 to include all the <input, target> sequence pairs in one batch
 
-3. Changing the embedding size to 3900 from 2600 for better lower-dimensional representation for the vocab of size 9900
+3. Changing the embedding size to 3400 from 2600 for better lower-dimensional representation for the vocab of size 9900
 
 4. Changing the look-back context logic in the predict() routine - single step look-back with feed-forward
 """
@@ -83,22 +82,19 @@ class RNNStockAnalysisScrimmage(object):
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 3900
+    PROJECTED_VECTOR_SIZE = 3400
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
 
     # The number of units in the first RNN layer
-    NUMBER_OF_RNN_UNITS_1 = 3900
+    NUMBER_OF_RNN_UNITS_1 = 5100
 
     # The number of units in the second RNN layer
-    NUMBER_OF_RNN_UNITS_2 = 2600
+    NUMBER_OF_RNN_UNITS_2 = 3400
 
     # The number of units in the third RNN layer
-    NUMBER_OF_RNN_UNITS_3 = 1300
-
-    # The number of units in the fourth RNN layer
-    NUMBER_OF_RNN_UNITS_4 = 650
+    NUMBER_OF_RNN_UNITS_3 = 1700
 
     # Training data limit
     TRAINING_DATA_LIMIT = 6954
@@ -232,14 +228,15 @@ class RNNStockAnalysisScrimmage(object):
                            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
                            recurrent_initializer='glorot_uniform',
                            stateful=True),
+
                 # RNN Layer 4
-                custom_gru(self.NUMBER_OF_RNN_UNITS_4,
-                           return_sequences=True,
-                           # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
-                           # ...uniformly from...
-                           # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
-                           recurrent_initializer='glorot_uniform',
-                           stateful=True),
+                # custom_gru(self.NUMBER_OF_RNN_UNITS_4,
+                #            return_sequences=True,
+                #            # Xavier Uniform Initialization - RNN Cell/System initialization by drawing samples...
+                #            # ...uniformly from...
+                #            # ...[-\sqrt{\frac{6}{fan_{in} + fan_{out}}}, \sqrt{\frac{6}{fan_{in} + fan_{out}}}]
+                #            recurrent_initializer='glorot_uniform',
+                #            stateful=True),
 
                 # The Hinton dropout layer
                 # tensorflow.keras.layers.Dropout(rate=1 - self.KEEP_PROBABILITY),
