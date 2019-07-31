@@ -507,93 +507,117 @@ class Nexus(object):
     # Transition from the current state to the next state and validate the transition
     # Return <reward, next_state>
     def execute(self, action):
-        print('[DEBUG] Nexus transition: Transitioning the underlying MDP - \nState = \n{} and '
-              '\nAction = \n{}'.format(list(self.get_state_iterable()),
-                                       list(action)))
+        try:
+            # Before the transition...
+            print('[DEBUG] Nexus transition: Transitioning the underlying MDP - \nState = \n{} and '
+                  '\nAction = \n{}'.format(list(self.get_state_iterable()),
+                                           list(action)))
+            # TODO: Do we need a structural validation even after the actor getting a compliant action from ...
+            #  ...Nexus before execution?
+            # # Initial structural validation of the action
+            # internal_length_operator = numpy.vectorize(len)
+            # if len(action) != self.number_of_ports or \
+            #         sum(internal_length_operator(action)) != (self.number_of_ports * self.number_of_queues_per_port):
+            #     print('[ERROR] Nexus validate_action: Non-Compliant Action received from the recommendation system - '
+            #           '{}'.format(str(action)))
+            #     return False
 
-        # TODO: Do we need a structural validation even after the actor getting a compliant action from ...
-        #  ...Nexus before execution?
-        # # Initial structural validation of the action
-        # internal_length_operator = numpy.vectorize(len)
-        # if len(action) != self.number_of_ports or \
-        #         sum(internal_length_operator(action)) != (self.number_of_ports * self.number_of_queues_per_port):
-        #     print('[ERROR] Nexus validate_action: Non-Compliant Action received from the recommendation system - '
-        #           '{}'.format(str(action)))
-        #     return False
+            # Change Log: The action structure was changed to reflect changes in the Actor Network
+            # C_{global} global pool update
+            # leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
+            #     self.number_of_ports]
+            # ports = []
+            # # Ports Loop - i
+            # for i in range(self.number_of_ports):
+            #     queues = []
+            #     # C_{local}^{P_i} dedicated pool update
+            #     leftover_buffer_units_in_the_dedicated_pool =
+            #     self.state.ports[i].leftover_buffer_units_in_the_dedicated_pool +
+            #     action[i][self.number_of_queues_per_port]
+            #     # Queues Loop - j
+            #     for j in range(self.number_of_queues_per_port):
+            #         queues.append(self.QUEUE(queue_identifier=self.state.ports[i].queues[j].queue_identifier,
+            #                                  priority=self.state.ports[i].queues[j].priority,
+            #                                  required_minimum_capacity=self.state.ports[i].queues[
+            #                                      j].required_minimum_capacity,
+            #                                  allowed_maximum_buffer_capacity=self.state.ports[i].queues[
+            #                                      j].allowed_maximum_buffer_capacity,
+            #                                  allocated_buffer_units=self.state.ports[i].queues[
+            #                                                             j].allocated_buffer_units + action[i][j],
+            #                                  packet_drop_count=self.state.ports[i].queues[j].packet_drop_count))
+            #     ports.append(self.PORT(
+            #         port_identifier=self.state.ports[i].port_identifier,
+            #         leftover_buffer_units_in_the_dedicated_pool=leftover_buffer_units_in_the_dedicated_pool,
+            #         queues=queues))
+            # next_state = self.STATE(ports=ports,
+            #                         leftover_buffer_units_in_the_global_pool=leftover_buffer_units_in_the_global_pool)
+            # # Validate the new state and either authorize or deny the transition
+            # # Denial Philosophy: Persistence during Incompetence
+            # self.state, self.incompetence = (lambda: self.state, True,
+            #                                  lambda: next_state, False)[self.validate(next_state)]()
+            # return FEEDBACK(reward=self.reward(),
+            #                 next_state=self.state)
 
-        # Change Log: The action structure was changed to reflect changes in the Actor Network
-        # C_{global} global pool update
-        # leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
-        #     self.number_of_ports]
-        # ports = []
-        # # Ports Loop - i
-        # for i in range(self.number_of_ports):
-        #     queues = []
-        #     # C_{local}^{P_i} dedicated pool update
-        #     leftover_buffer_units_in_the_dedicated_pool = self.state.ports[
-        #                                                       i].leftover_buffer_units_in_the_dedicated_pool + action[
-        #                                                       i][self.number_of_queues_per_port]
-        #     # Queues Loop - j
-        #     for j in range(self.number_of_queues_per_port):
-        #         queues.append(self.QUEUE(queue_identifier=self.state.ports[i].queues[j].queue_identifier,
-        #                                  priority=self.state.ports[i].queues[j].priority,
-        #                                  required_minimum_capacity=self.state.ports[i].queues[
-        #                                      j].required_minimum_capacity,
-        #                                  allowed_maximum_buffer_capacity=self.state.ports[i].queues[
-        #                                      j].allowed_maximum_buffer_capacity,
-        #                                  allocated_buffer_units=self.state.ports[i].queues[
-        #                                                             j].allocated_buffer_units + action[i][j],
-        #                                  packet_drop_count=self.state.ports[i].queues[j].packet_drop_count))
-        #     ports.append(self.PORT(
-        #         port_identifier=self.state.ports[i].port_identifier,
-        #         leftover_buffer_units_in_the_dedicated_pool=leftover_buffer_units_in_the_dedicated_pool,
-        #         queues=queues))
-        # next_state = self.STATE(ports=ports,
-        #                         leftover_buffer_units_in_the_global_pool=leftover_buffer_units_in_the_global_pool)
-        # # Validate the new state and either authorize or deny the transition
-        # # Denial Philosophy: Persistence during Incompetence
-        # self.state, self.incompetence = (lambda: self.state, True,
-        #                                  lambda: next_state, False)[self.validate(next_state)]()
-        # return FEEDBACK(reward=self.reward(),
-        #                 next_state=self.state)
-
-        leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
-            (self.number_of_queues_per_port + 1) * self.number_of_ports]
-        ports = []
-        # Ports Loop - i
-        for i in range(self.number_of_ports):
-            queues = []
-            # C_{local}^{P_i} dedicated pool update
-            leftover_buffer_units_in_the_dedicated_pool = \
-                self.state.ports[i].leftover_buffer_units_in_the_dedicated_pool + action[(i * (
-                        self.number_of_queues_per_port + 1)) + self.number_of_queues_per_port]
-            # Queues Loop - j
-            for j in range(self.number_of_queues_per_port):
-                queues.append(self.QUEUE(queue_identifier=self.state.ports[i].queues[j].queue_identifier,
-                                         priority=self.state.ports[i].queues[j].priority,
-                                         required_minimum_capacity=self.state.ports[i].queues[
-                                             j].required_minimum_capacity,
-                                         allowed_maximum_buffer_capacity=self.state.ports[i].queues[
-                                             j].allowed_maximum_buffer_capacity,
-                                         allocated_buffer_units=self.state.ports[i].queues[
-                                                                    j].allocated_buffer_units + action[
-                                                                    (i * self.number_of_queues_per_port) + j],
-                                         packet_drop_count=self.state.ports[i].queues[j].packet_drop_count))
-            ports.append(self.PORT(
-                port_identifier=self.state.ports[i].port_identifier,
-                leftover_buffer_units_in_the_dedicated_pool=leftover_buffer_units_in_the_dedicated_pool,
-                queues=queues))
-        next_state = self.STATE(ports=ports,
-                                leftover_buffer_units_in_the_global_pool=leftover_buffer_units_in_the_global_pool)
-        # Validate the new state and either authorize or deny the transition
-        # Denial Philosophy: Persistence during Incompetence
-        if self.validate(next_state) is False:
-            self.incompetence = True
-        else:
-            self.incompetence = False
-            self.state = next_state
-        return FEEDBACK(reward=self.reward(),
-                        next_state=self.get_state_iterable())
+            leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
+                (self.number_of_queues_per_port + 1) * self.number_of_ports]
+            ports = []
+            # Ports Loop - i
+            for i in range(self.number_of_ports):
+                queues = []
+                # C_{local}^{P_i} dedicated pool update
+                leftover_buffer_units_in_the_dedicated_pool = \
+                    self.state.ports[i].leftover_buffer_units_in_the_dedicated_pool + action[(i * (
+                            self.number_of_queues_per_port + 1)) + self.number_of_queues_per_port]
+                # Queues Loop - j
+                for j in range(self.number_of_queues_per_port):
+                    queues.append(self.QUEUE(queue_identifier=self.state.ports[i].queues[j].queue_identifier,
+                                             priority=self.state.ports[i].queues[j].priority,
+                                             required_minimum_capacity=self.state.ports[i].queues[
+                                                 j].required_minimum_capacity,
+                                             allowed_maximum_buffer_capacity=self.state.ports[i].queues[
+                                                 j].allowed_maximum_buffer_capacity,
+                                             allocated_buffer_units=self.state.ports[i].queues[
+                                                                        j].allocated_buffer_units + action[
+                                                                        (i * self.number_of_queues_per_port) + j],
+                                             packet_drop_count=self.state.ports[i].queues[j].packet_drop_count))
+                ports.append(self.PORT(
+                    port_identifier=self.state.ports[i].port_identifier,
+                    leftover_buffer_units_in_the_dedicated_pool=leftover_buffer_units_in_the_dedicated_pool,
+                    queues=queues))
+            next_state = self.STATE(ports=ports,
+                                    leftover_buffer_units_in_the_global_pool=leftover_buffer_units_in_the_global_pool)
+            # Validate the new state and either authorize or deny the transition
+            # Denial Philosophy: Persistence during Incompetence
+            if self.validate(next_state) is False:
+                self.incompetence = True
+            else:
+                self.incompetence = False
+                self.state = next_state
+            # Temporary mutex release
+            if caerus.locked():
+                caerus.release()
+            # Sleep for some time for Ares to catch up...
+            time.sleep(10.0)
+            # TODO: All mutex operations should be outside Nexus...this is a bad hack
+            # Get back the mutex for reward analysis
+            caerus.acquire()
+            # Analyze the reward after Ares had some time to thoroughly comprehend the changes...
+            reward = self.reward()
+            # After the transition...
+            print('[DEBUG] MDP Transitioned - \nState = \n{} '
+                  '\nReward = {}'.format(list(self.get_state_iterable()),
+                                         reward))
+            return FEEDBACK(reward=reward,
+                            next_state=self.get_state_iterable())
+        except Exception as e:
+            print('[ERROR] Nexus execute: Exception caught while executing the recommended MDP transition - '
+                  '{}'.format(e))
+            traceback.print_tb(e.__traceback__)
+            return None
+        finally:
+            # Safe mutex release
+            if caerus.locked():
+                caerus.release()
         # The state transition of the underlying MDP has been completed...
 
     # Shutdown the system
@@ -1021,16 +1045,18 @@ class Artemis(object):
     EXPLORATION_FACTOR = 1.0
 
     # The default exploration decay - exploration-decay strategy only
-    EXPLORATION_DECAY = 0.1
+    EXPLORATION_DECAY = 0.95
 
     # The default minimum allowed exploration factor - exploration-decay strategy only
-    MINIMUM_EXPLORATION_FACTOR = 1e-6
+    MINIMUM_EXPLORATION_FACTOR = 1e-9
 
     # The initialization sequence
-    def __init__(self, _exploration_strategy, _action_dimension, _exploration_factor=None, _exploration_decay=None,
-                 _exploration_factor_min=None, _x0=None, _mu=None, _theta=0.15, _sigma=0.3, _dt=1e-2):
+    def __init__(self, _environment, _exploration_strategy, _action_dimension, _exploration_factor=None,
+                 _exploration_decay=None, _exploration_factor_min=None, _x0=None, _mu=None,
+                 _theta=0.15, _sigma=0.3, _dt=1e-2):
         print('[INFO] Artemis Initialization: Bringing things up...')
         # Initializing the input parameters with the given arguments...
+        self.environment = _environment
         self.action_dimension = _action_dimension
         self.exploration_strategy = (lambda: self.EXPLORATION_STRATEGY,
                                      lambda: _exploration_strategy)[_exploration_strategy is not None and
@@ -1058,19 +1084,56 @@ class Artemis(object):
             self.dt = _dt
         # The initialization sequence for the Artemis entity has been completed...
 
+    # The constrained randomization procedure for the EXPLORATION_DECAY strategy
+    # A static utility method to generate random allocation strategies within the specified bounds
+    # This routine is O(n) as opposed to O(n^m) that would be needed for conventional methods
+    @staticmethod
+    def constrained_randomization(slots, ceiling):
+        allocated = []
+        divisor = numpy.random.uniform(0.0,
+                                       float(ceiling))
+        remaining = ceiling
+        for i in range(slots - 1):
+            x = remaining // divisor
+            allocated.append(x)
+            remaining = ceiling - x
+        allocated.append(remaining)
+        return allocated
+
     # Return the action appended/modified with the exploration noise
     def execute(self, action):
-        # EXPLORATION_DECAY
+
+        # EXPLORATION_DECAY - Unconstrained Randomization
+        # if self.exploration_strategy == ExplorationStrategy.EXPLORATION_DECAY:
+        #     # Decay the exploration factor and employ the well-known $\epsilon-greedy$ logic
+        #     self.decay()
+        #     if numpy.random.rand() <= self.exploration_factor:
+        #         return numpy.reshape(numpy.random.random_sample(self.action_dimension),
+        #                              newshape=(1,
+        #                                        1,
+        #                                        self.action_dimension))
+        #     return action
+
+        # EXPLORATION_DECAY - Constrained Randomization
         if self.exploration_strategy == ExplorationStrategy.EXPLORATION_DECAY:
-            # Decay the exploration factor and employ the well-known $\epsilon-greedy$ logic
+            constrained_random_action = []
+            # Decay the exploration factor and apply the $\epsilon-greedy$ logic
             self.decay()
             if numpy.random.rand() <= self.exploration_factor:
-                return numpy.reshape(numpy.random.random_sample(self.action_dimension),
-                                     newshape=(1,
-                                               1,
-                                               self.action_dimension))
-            return action
-        # ORNSTEIN_UHLENBECK_NOISE
+                # Global allocation - the ports and the global pool
+                global_allocation = self.constrained_randomization(self.environment.number_of_ports + 1,
+                                                                   self.environment.global_pool_size)
+                for port in range(self.environment.number_of_ports):
+                    # Local allocation - the queues and the local pool
+                    constrained_random_action.append(self.constrained_randomization(
+                        self.environment.number_of_queues_per_port + 1,
+                        global_allocation[port]))
+                constrained_random_action.append([global_allocation[self.environment.number_of_ports + 1]])
+                # Expand the individual allocation all the way from the global pool to the individual queue allocations
+                return [k for entry in action for k in entry]
+            else:
+                return action
+        # ORNSTEIN_UHLENBECK_NOISE - Unconstrained Randomization
         if self.exploration_strategy == ExplorationStrategy.ORNSTEIN_UHLENBECK_NOISE:
             noise = self.generate_noise()
             # Assuming the action is a row vector, we add the generated Ornstein-Uhlenbeck noise to each action entry
@@ -1296,7 +1359,8 @@ class Apollo(object):
                                       self.replay_memory_details.prioritization_level,
                                       self.replay_memory_details.random_seed)
                 # Initialize the Exploration Noise Generator
-                artemis = Artemis(self.exploration_strategy_details.exploration_strategy,
+                artemis = Artemis(self.nexus,
+                                  self.exploration_strategy_details.exploration_strategy,
                                   self.exploration_strategy_details.action_dimension,
                                   self.exploration_strategy_details.exploration_factor,
                                   self.exploration_strategy_details.exploration_decay,
@@ -1327,10 +1391,7 @@ class Apollo(object):
                             axis=0)
                         action = artemis.execute(actor.predict(state))
                         feedback = self.nexus.execute(numpy.squeeze(action))
-                        # Mutex release
-                        caerus.release()
-                        # Sleep for some time for Ares to catch up
-                        time.sleep(10.0)
+                        # Mutex released from within Nexus...
                         # Validation - exit if invalid
                         if feedback is None or self.utilities.custom_instance_validation(feedback,
                                                                                          FEEDBACK) is False:
@@ -1405,7 +1466,8 @@ class Apollo(object):
             caerus.acquire()
             self.nexus.initiate_shutdown()
             # Mutex release
-            caerus.release()
+            if caerus.locked():
+                caerus.release()
             # If the tensorflow session is up and running, close it...
             if session is not None:
                 session.close()
@@ -1468,6 +1530,7 @@ class Ares(object):
             # The switch should be up and running
             # Change Log: Loop control for the timer logic included in-house
             while True:
+                # Acquire the mutex for accessing the switch infrastructure
                 caerus.acquire()
                 for p in range(self.nexus.number_of_ports):
                     for q in range(self.nexus.number_of_queues_per_port):
@@ -1527,12 +1590,17 @@ class Ares(object):
                         self.pending_packets[p][q] = allocated - free
                 # Change Log: Sleep for 1 second before pumping packets and simulating the queueing system
                 # Release the mutex
-                caerus.release()
+                if caerus.locked():
+                    caerus.release()
                 time.sleep(1.0)
         except Exception as exception:
             print('[ERROR] Ares start: Exception caught while simulating packet arrival and '
                   'analyzing switch performance - [{}]'.format(exception))
             traceback.print_tb(exception.__traceback__)
+        finally:
+            # Safe release of the mutex
+            if caerus.locked():
+                caerus.release()
         # Ares analysis has been completed...
 
     # The termination sequence
@@ -1586,8 +1654,8 @@ if __name__ == '__main__':
         exploration_strategy=ExplorationStrategy.EXPLORATION_DECAY,
         action_dimension=action_dimension,
         exploration_factor=1.0,
-        exploration_decay=0.6,
-        exploration_factor_min=0.001,
+        exploration_decay=0.95,
+        exploration_factor_min=1e-9,
         # Ornstein-Uhlenbeck Exploration Noise: Populated the default parameters even though they're not essential...
         # ...in this use case
         x0=None,
