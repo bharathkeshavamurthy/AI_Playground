@@ -626,9 +626,9 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             # Since I'm running on a TensorFlow backend, the model will automatically run on a GPU if one is detected.
             # Construct a standard NN model with one hidden layer and ReLU & sigmoid non-linearities
             self.model = tensorflow.keras.Sequential([
-                # The input layer (input_shape = (len(self.dataframe.columns) - 1,)) and the first hidden layer
+                # The input layer (input_shape = (len(self.training_features.columns),)) and the first hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_1,
-                                              input_shape=(len(self.training_features.columns) - 1,),
+                                              input_shape=(len(self.training_features.columns),),
                                               activation=tensorflow.nn.relu),
                 # The hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_2,
