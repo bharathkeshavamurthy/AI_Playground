@@ -844,7 +844,7 @@ class LinkFailureCausationAnalyzer(object):
 
     # Get a locally interpretable explanation for a prediction
     def get_interpretable_explanation(self, classifier):
-        features_under_analysis = list(classifier.features.columns.values)
+        features_under_analysis = list(classifier.training_features.columns.values)
         print('[INFO] LinkFailureCausationAnalyzer get_interpretable_explanation: The features under sensitivity '
               'analysis are: {}'.format(features_under_analysis))
         # Explain a prediction
