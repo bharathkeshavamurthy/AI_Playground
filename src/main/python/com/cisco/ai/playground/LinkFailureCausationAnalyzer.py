@@ -89,7 +89,7 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (60.0, 60.0)
+        self.initial_weights = (24.0, -62.0)
         # The intercept constraint in the given linear inequality, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -475,12 +475,21 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             # A word to integer mapping for categorical columns
             feature_index_map = (lambda: {u.strip(): i for i, u in enumerate(vocabulary)},
                                  lambda: {k: j for j, k in enumerate(vocabulary)})[isinstance(data, str) is False]()
+
             # Evaluate the mean and standard deviation of the integer mappings for normalization
             # Add the feature index map, the mean, and the standard deviation of the feature family to the...
             # ...feature vocabulary dict
+
+            # Redundancy check
+            std_dev = numpy.std(list(feature_index_map.values()))
+            if std_dev == 0.0:
+                print('\n[WARN] NeuralNetworkClassificationEngine process_data: The given dataset contains redundant '
+                      'information: [{}]'.format(family))
+                self.redundant_features.append(family)
             self.data_processor_memory[family] = (feature_index_map,
                                                   numpy.mean(list(feature_index_map.values())),
-                                                  numpy.std(list(feature_index_map.values())))
+                                                  std_dev)
+
         feature_index_map, mean, standard_deviation = self.data_processor_memory[family]
         # Normalize the value according to the stats for that particular family and return the normalized value
         # A corner case check - DivideByZero Error
@@ -495,6 +504,8 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
         data_file = 'datasets/link.xlsx'
         # The memory of the data processor
         self.data_processor_memory = {}
+        # The useless/redundant columns in the given dataset are housed in this collection
+        self.redundant_features = []
         # The feature vocabulary mapping
         self.feature_vocabulary_mapping = {}
         try:
@@ -559,6 +570,13 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                 # A simple conditional within an outer example iterator
                 labels[j] = (lambda: 0,
                              lambda: 1)[labels[j].strip() == 'up']()
+            # Remove the redundant features from the pre-processed dataframe
+            for k in self.redundant_features:
+                del features[k]
+            print('\n[INFO] NeuralNetworkClassificationEngine Initialization: The redundant features are: '
+                  '{}'.format(self.redundant_features))
+            print('[INFO] NeuralNetworkClassificationEngine Initialization: The important relevant features are: '
+                  '{}'.format(list(features.columns.values)))
             split = math.floor(len(features) * self.TRAINING_SPLIT)
             # The training data
             self.training_features, self.training_labels = features[:split], labels[:split]
@@ -589,6 +607,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                          headers='keys',
                          tablefmt='psql')
             ))
+            # Print the overall (redundant + non-redundant) number of features along with any other relevant information
             print('[INFO] NeuralNetworkClassificationEngine Initialization: The parameters of the dataset are - '
                   'Number of Features = [{}], '
                   'Number of Training Examples = [{}], and '
@@ -660,7 +679,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                            self.training_labels,
                            batch_size=self.BATCH_SIZE,
                            epochs=self.NUMBER_OF_TRAINING_EPOCHS,
-                           verbose=1)
+                           verbose=0)
             return True
         except Exception as e:
             print('[ERROR] NeuralNetworkClassificationEngine train_model: Exception caught while training '
