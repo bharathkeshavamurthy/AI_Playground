@@ -184,20 +184,25 @@ class Nexus(object):
     DEDICATED_POOL_SIZE_PER_PORT = 40
 
     # The penalty multiplier for invalid transitions, i.e. invalid actions
-    INCOMPETENCE_PENALTY_MULTIPLIER = 5.0
+    INCOMPETENCE_PENALTY_MULTIPLIER = 100
+
+    # The penalty additive for invalid transitions, i.e. invalid actions
+    INCOMPETENCE_PENALTY_ADDITIVE = -100
 
     # The initial heavy penalty for recommending non-compliant actions
-    INITIAL_INCOMPETENCE_PENALTY = -1000.0
+    # INITIAL_INCOMPETENCE_PENALTY = -1000
 
+    # The members of the queue instance for multiplier evaluation
+    QUEUE_INSTANCE_MEMBERS = ['queue_identifier',
+                              'priority',
+                              'required_minimum_capacity',
+                              'allowed_maximum_buffer_capacity',
+                              'allocated_buffer_units',
+                              'packet_drop_count'
+                              ]
     # A queue entity
     QUEUE = recordclass('Queue',
-                        ['queue_identifier',
-                         'priority',
-                         'required_minimum_capacity',
-                         'allowed_maximum_buffer_capacity',
-                         'allocated_buffer_units',
-                         'packet_drop_count'
-                         ])
+                        QUEUE_INSTANCE_MEMBERS)
 
     # The number of fields in the QUEUE namedtuple that are irrelevant to the state
     # This is used for reshaping the tensor and include only the relevant fields in the state given to the Actor
@@ -260,6 +265,9 @@ class Nexus(object):
         # Successful initialization
         # This seems unnecessary - maybe we can find a use for this later...
         self.status = Status.SUCCESS
+        # The multiplier parameter is exposed for use by Artemis...
+        # The multiplier used in action creation from the output of the constrained_randomization() routine
+        self.multiplier = len(self.QUEUE_INSTANCE_MEMBERS) - self.STATE_IRRELEVANT_FIELDS
         # A flag which indicated gross incompetence exhibited by the RL agent
         # If this flag is set to true, impose sky-high tariffs...
         self.incompetence = False
@@ -405,6 +413,31 @@ class Nexus(object):
             traceback.print_tb(exception.__traceback__)
         return None
 
+    # Return the given custom state in the form of an iterable
+    def get_custom_state_iterable(self, custom_state):
+        state = []
+        try:
+            # The ports loop - p
+            for port in range(self.number_of_ports):
+                # The queues loop - q
+                for queue in range(self.number_of_queues_per_port):
+                    queue_state = custom_state.ports[port].queues[queue]
+                    state.append([queue_state.required_minimum_capacity,
+                                  queue_state.allowed_maximum_buffer_capacity,
+                                  queue_state.allocated_buffer_units,
+                                  queue_state.packet_drop_count])
+                # Append the port-specific dedicated pool state
+                state.append([custom_state.ports[port].leftover_buffer_units_in_the_dedicated_pool])
+            # Append the global pool state
+            state.append([custom_state.leftover_buffer_units_in_the_global_pool])
+            # The final state representation - restructure the state vector and convert it into a tensor
+            return [k for entry in state for k in entry]
+        except Exception as exception:
+            print('[ERROR] Nexus get_custom_state_iterable: Exception caught while formatting the state of the switch '
+                  '- [{}]'.format(exception))
+            traceback.print_tb(exception.__traceback__)
+        return None
+
     # Change Log: Eager Execution is not supported when using placeholders (1.13.1)
     # def get_action_dimension(self):
     #     ports = []
@@ -500,8 +533,7 @@ class Nexus(object):
         print('[DEBUG] Nexus reward: Evaluating the utility of the recommendation...')
         reward = -sum(q.packet_drop_count for p in self.state.ports for q in p.queues)
         if self.incompetence:
-            return (lambda: self.INCOMPETENCE_PENALTY_MULTIPLIER * reward,
-                    lambda: self.INITIAL_INCOMPETENCE_PENALTY)[reward == 0]()
+            return (self.INCOMPETENCE_PENALTY_MULTIPLIER * reward) + self.INCOMPETENCE_PENALTY_ADDITIVE
         return reward
 
     # Transition from the current state to the next state and validate the transition
@@ -512,6 +544,9 @@ class Nexus(object):
             print('[DEBUG] Nexus transition: Transitioning the underlying MDP - \nState = \n{} and '
                   '\nAction = \n{}'.format(list(self.get_state_iterable()),
                                            list(action)))
+
+            # This is no longer necessary...
+            # I've changed the switch API to accept the state transition as a recommendation instead of a cruder +/-
             # TODO: Do we need a structural validation even after the actor getting a compliant action from ...
             #  ...Nexus before execution?
             # # Initial structural validation of the action
@@ -558,34 +593,63 @@ class Nexus(object):
             # return FEEDBACK(reward=self.reward(),
             #                 next_state=self.state)
 
-            leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
-                (self.number_of_queues_per_port + 1) * self.number_of_ports]
+            # leftover_buffer_units_in_the_global_pool = self.state.leftover_buffer_units_in_the_global_pool + action[
+            #     (self.number_of_queues_per_port + 1) * self.number_of_ports]
+            # ports = []
+            # # Ports Loop - i
+            # for i in range(self.number_of_ports):
+            #     queues = []
+            #     # C_{local}^{P_i} dedicated pool update
+            #     leftover_buffer_units_in_the_dedicated_pool = \
+            #         self.state.ports[i].leftover_buffer_units_in_the_dedicated_pool + action[(i * (
+            #                 self.number_of_queues_per_port + 1)) + self.number_of_queues_per_port]
+            #     # Queues Loop - j
+            #     for j in range(self.number_of_queues_per_port):
+            #         queues.append(self.QUEUE(queue_identifier=self.state.ports[i].queues[j].queue_identifier,
+            #                                  priority=self.state.ports[i].queues[j].priority,
+            #                                  required_minimum_capacity=self.state.ports[i].queues[
+            #                                      j].required_minimum_capacity,
+            #                                  allowed_maximum_buffer_capacity=self.state.ports[i].queues[
+            #                                      j].allowed_maximum_buffer_capacity,
+            #                                  allocated_buffer_units=self.state.ports[i].queues[
+            #                                                             j].allocated_buffer_units + action[
+            #                                                             (i * (self.number_of_queues_per_port + 1))
+            #                                                             + j],
+            #                                  packet_drop_count=self.state.ports[i].queues[j].packet_drop_count))
+            #     ports.append(self.PORT(
+            #         port_identifier=self.state.ports[i].port_identifier,
+            #         leftover_buffer_units_in_the_dedicated_pool=leftover_buffer_units_in_the_dedicated_pool,
+            #         queues=queues))
+            # next_state = self.STATE(ports=ports,
+            #                         leftover_buffer_units_in_the_global_pool=leftover_buffer_units_in_the_global_pool)
+
+            # I've changed the switch API to accept the state transition as a recommendation instead of a cruder +/-
+            # Mutex has been acquired: min, max, and packet_drop_count extraction
             ports = []
-            # Ports Loop - i
-            for i in range(self.number_of_ports):
+            for p in range(self.number_of_ports):
                 queues = []
-                # C_{local}^{P_i} dedicated pool update
-                leftover_buffer_units_in_the_dedicated_pool = \
-                    self.state.ports[i].leftover_buffer_units_in_the_dedicated_pool + action[(i * (
-                            self.number_of_queues_per_port + 1)) + self.number_of_queues_per_port]
-                # Queues Loop - j
-                for j in range(self.number_of_queues_per_port):
-                    queues.append(self.QUEUE(queue_identifier=self.state.ports[i].queues[j].queue_identifier,
-                                             priority=self.state.ports[i].queues[j].priority,
-                                             required_minimum_capacity=self.state.ports[i].queues[
-                                                 j].required_minimum_capacity,
-                                             allowed_maximum_buffer_capacity=self.state.ports[i].queues[
-                                                 j].allowed_maximum_buffer_capacity,
-                                             allocated_buffer_units=self.state.ports[i].queues[
-                                                                        j].allocated_buffer_units + action[
-                                                                        (i * self.number_of_queues_per_port) + j],
-                                             packet_drop_count=self.state.ports[i].queues[j].packet_drop_count))
-                ports.append(self.PORT(
-                    port_identifier=self.state.ports[i].port_identifier,
-                    leftover_buffer_units_in_the_dedicated_pool=leftover_buffer_units_in_the_dedicated_pool,
-                    queues=queues))
+                for q in range(self.number_of_queues_per_port):
+                    queues.append(self.QUEUE(queue_identifier=self.state.ports[p].queues[q].queue_identifier,
+                                             priority=self.state.ports[p].queues[q].priority,
+                                             required_minimum_capacity=self.state.ports[p].queues[
+                                                 q].required_minimum_capacity,
+                                             allowed_maximum_buffer_capacity=self.state.ports[p].queues[
+                                                 q].allowed_maximum_buffer_capacity,
+                                             allocated_buffer_units=action[
+                                                 (p * (self.number_of_queues_per_port + 1) + q)
+                                             ],
+                                             packet_drop_count=self.state.ports[p].queues[q].packet_drop_count
+                                             ))
+                ports.append(self.PORT(port_identifier=self.state.ports[p].port_identifier,
+                                       leftover_buffer_units_in_the_dedicated_pool=action[
+                                           ((p * (self.number_of_queues_per_port + 1)) + self.number_of_queues_per_port)
+                                       ],
+                                       queues=queues))
             next_state = self.STATE(ports=ports,
-                                    leftover_buffer_units_in_the_global_pool=leftover_buffer_units_in_the_global_pool)
+                                    leftover_buffer_units_in_the_global_pool=action[-1])
+            print('[DEBUG] Nexus execute: The recommended state transition is \n{}\n'.format(
+                self.get_custom_state_iterable(next_state)
+            ))
             # Validate the new state and either authorize or deny the transition
             # Denial Philosophy: Persistence during Incompetence
             if self.validate(next_state) is False:
@@ -620,6 +684,16 @@ class Nexus(object):
                 caerus.release()
         # The state transition of the underlying MDP has been completed...
 
+    # Get the limits of the action vector to be recommended by the Actor Network
+    def get_action_limits(self):
+        action_limits = []
+        for p in range(self.number_of_ports):
+            for q in range(self.number_of_queues_per_port):
+                action_limits.append(self.state.ports[p].queues[q].allowed_maximum_buffer_capacity)
+            action_limits.append(self.DEDICATED_POOL_SIZE_PER_PORT)
+        action_limits.append(self.GLOBAL_POOL_SIZE)
+        return action_limits
+
     # Shutdown the system
     def initiate_shutdown(self):
         self.shutdown = True
@@ -653,13 +727,14 @@ class Actor(object):
     #              _target_tracker_coefficient, _batch_size, _reshape_factor):
 
     # The initialization sequence
-    def __init__(self, _tensorflow_session, _state_dimension, _action_dimension,
+    def __init__(self, _tensorflow_session, _state_dimension, _action_dimension, _action_bounds,
                  _learning_rate, _target_tracker_coefficient, _batch_size):
         print('[INFO] Actor Initialization: Bringing things up...')
         # Initializing the essential input parameters with the given arguments
         self.tensorflow_session = _tensorflow_session
         self.state_dimension = _state_dimension
         self.action_dimension = _action_dimension
+        self.action_bounds = _action_bounds
         self.learning_rate = _learning_rate
         self.target_tracker_coefficient = _target_tracker_coefficient
         self.batch_size = _batch_size
@@ -711,9 +786,10 @@ class Actor(object):
         batch_normalization_layer_2 = tensorflow.keras.layers.BatchNormalization()(dense_layer_2)
         output_data = tensorflow.keras.layers.Dense(
             units=self.action_dimension.dims[0].value,
-            activation=tensorflow.keras.activations.tanh,
+            activation=tensorflow.keras.activations.sigmoid,
             kernel_initializer='glorot_uniform')(batch_normalization_layer_2)
-        return input_data, output_data[0]
+        return input_data, tensorflow.multiply(output_data[0],
+                                               self.action_bounds)
 
         # Print the summary of the model for aesthetic purposes
         # print('[INFO] Actor build: The summary of the model built is printed below...')
@@ -1045,10 +1121,10 @@ class Artemis(object):
     EXPLORATION_FACTOR = 1.0
 
     # The default exploration decay - exploration-decay strategy only
-    EXPLORATION_DECAY = 0.95
+    EXPLORATION_DECAY = 0.99
 
     # The default minimum allowed exploration factor - exploration-decay strategy only
-    MINIMUM_EXPLORATION_FACTOR = 1e-9
+    MINIMUM_EXPLORATION_FACTOR = 0.1
 
     # The initialization sequence
     def __init__(self, _environment, _exploration_strategy, _action_dimension, _exploration_factor=None,
@@ -1094,9 +1170,9 @@ class Artemis(object):
                                        float(ceiling))
         remaining = ceiling
         for i in range(slots - 1):
-            x = remaining // divisor
+            x = int(math.floor(remaining / divisor))
             allocated.append(x)
-            remaining = ceiling - x
+            remaining = remaining - x
         allocated.append(remaining)
         return allocated
 
@@ -1116,33 +1192,56 @@ class Artemis(object):
 
         # EXPLORATION_DECAY - Constrained Randomization
         if self.exploration_strategy == ExplorationStrategy.EXPLORATION_DECAY:
+            # The constrained random action here is a recommended state transition...(the switch API handles the +/-)
             constrained_random_action = []
             # Decay the exploration factor and apply the $\epsilon-greedy$ logic
             self.decay()
             if numpy.random.rand() <= self.exploration_factor:
+
+                # env_state = self.environment.get_state_iterable()
+
                 # Global allocation - the ports and the global pool
                 global_allocation = self.constrained_randomization(self.environment.number_of_ports + 1,
                                                                    self.environment.global_pool_size)
                 for port in range(self.environment.number_of_ports):
                     # Local allocation - the queues and the local pool
-                    constrained_random_action.append(self.constrained_randomization(
-                        self.environment.number_of_queues_per_port + 1,
-                        global_allocation[port]))
-                constrained_random_action.append([global_allocation[self.environment.number_of_ports + 1]])
-                # Expand the individual allocation all the way from the global pool to the individual queue allocations
-                return [k for entry in action for k in entry]
-            else:
-                return action
+                    for k in self.constrained_randomization(
+                            self.environment.number_of_queues_per_port + 1,
+                            global_allocation[port] + self.environment.dedicated_pool_size_per_port):
+                        constrained_random_action.append(k)
+                constrained_random_action.append(
+                    global_allocation[self.environment.number_of_ports]
+                )
+                # Reshape the action to make it compliant with the Actor-Critic-Nexus framework
+                return numpy.reshape(constrained_random_action,
+                                     newshape=(1,
+                                               1,
+                                               self.action_dimension)
+                                     )
+            # The non-random action here is a recommended state transition...(the switch API handles the +/-)
+            # Restructuring the Actor-recommended transition...
+            return numpy.reshape([int(k) for k in numpy.squeeze(action)],
+                                 newshape=(1,
+                                           1,
+                                           self.action_dimension)
+                                 )
+        # TODO: Does this seem reasonable (random noise addition) when I decided to directly deal in transitions...
+        #  and hide the +/- operations within the switch's exposed API?
         # ORNSTEIN_UHLENBECK_NOISE - Unconstrained Randomization
         if self.exploration_strategy == ExplorationStrategy.ORNSTEIN_UHLENBECK_NOISE:
             noise = self.generate_noise()
             # Assuming the action is a row vector, we add the generated Ornstein-Uhlenbeck noise to each action entry
             # TODO: If the action is a tensor of a different shape, change this exploration noise addition logic...
-            return [(k + noise) for k in action]
+            return numpy.reshape([(k + noise) for k in action],
+                                 newshape=(1,
+                                           1,
+                                           self.action_dimension)
+                                 )
 
     # A simple utility method to decay the exploration factor
     def decay(self):
-        self.exploration_factor *= self.exploration_decay
+        if self.exploration_factor >= self.exploration_factor_min:
+            self.exploration_factor *= self.exploration_decay
 
     # Generate Ornstein-Uhlenbeck Noise
     # The exploration policy involves adding this generated Ornstein-Uhlenbeck noise
@@ -1343,6 +1442,7 @@ class Apollo(object):
                 actor = Actor(session,
                               self.state_dimension,
                               self.action_dimension,
+                              self.nexus.get_action_limits(),
                               self.actor_design_details.learning_rate,
                               self.actor_design_details.target_tracker_coefficient,
                               self.actor_design_details.batch_size)
@@ -1654,8 +1754,8 @@ if __name__ == '__main__':
         exploration_strategy=ExplorationStrategy.EXPLORATION_DECAY,
         action_dimension=action_dimension,
         exploration_factor=1.0,
-        exploration_decay=0.95,
-        exploration_factor_min=1e-9,
+        exploration_decay=0.99,
+        exploration_factor_min=0.1,
         # Ornstein-Uhlenbeck Exploration Noise: Populated the default parameters even though they're not essential...
         # ...in this use case
         x0=None,
@@ -1668,9 +1768,9 @@ if __name__ == '__main__':
     # Discount Factor
     discount_factor = 0.9
     # Iterations per Episode
-    iterations_per_episode = 1e3
+    iterations_per_episode = 1e2
     # Maximum Number of Episodes
-    maximum_number_of_episodes = 1e5
+    maximum_number_of_episodes = 1e4
 
     # Old call: The environment_details arg is no longer needed. Pass Nexus directly to Apollo.
     # apollo = Apollo(environment_details, actor_design_details, critic_design_details, replay_memory_design_details,
