@@ -628,7 +628,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
             self.model = tensorflow.keras.Sequential([
                 # The input layer (input_shape = (len(self.dataframe.columns) - 1,)) and the first hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_1,
-                                              input_shape=(len(self.dataframe.columns) - 1,),
+                                              input_shape=(len(self.training_features.columns) - 1,),
                                               activation=tensorflow.nn.relu),
                 # The hidden layer
                 tensorflow.keras.layers.Dense(units=self.NUMBER_OF_HIDDEN_UNITS_2,
@@ -844,7 +844,9 @@ class LinkFailureCausationAnalyzer(object):
 
     # Get a locally interpretable explanation for a prediction
     def get_interpretable_explanation(self, classifier):
-        features_under_analysis = classifier.dataframe.columns[:-1]
+        features_under_analysis = list(classifier.features.columns.values)
+        print('[INFO] LinkFailureCausationAnalyzer get_interpretable_explanation: The features under sensitivity '
+              'analysis are: {}'.format(features_under_analysis))
         # Explain a prediction
         # Make a prediction using the built, compiled, and trained classifier
         sample_index, features, label = classifier.make_a_prediction()
@@ -870,7 +872,7 @@ class LinkFailureCausationAnalyzer(object):
               )
         print(
             '[INFO] LinkFailureCausationAnalyzer get_interpretable_explanation: Sample normalized prediction instance '
-            'under rationale analysis - '
+            'under rationale analysis after redundancy removal - '
             '\nFeatures = \n{} and '
             '\nPredicted Label = {}'.format(tabulate(features,
                                                      headers='keys',
