@@ -183,11 +183,14 @@ class Nexus(object):
     # The default local pool size (per port)
     DEDICATED_POOL_SIZE_PER_PORT = 40
 
+    # The penalty multiplier for competent transitions
+    COMPETENCE_DROP_PENALTY_MULTIPLIER = 25
+
     # The penalty multiplier for invalid transitions, i.e. invalid actions
-    INCOMPETENCE_PENALTY_MULTIPLIER = 100
+    INCOMPETENCE_PENALTY_MULTIPLIER = 1000
 
     # The penalty additive for invalid transitions, i.e. invalid actions
-    INCOMPETENCE_PENALTY_ADDITIVE = -100
+    INCOMPETENCE_PENALTY_ADDITIVE = -100000
 
     # The initial heavy penalty for recommending non-compliant actions
     # INITIAL_INCOMPETENCE_PENALTY = -1000
@@ -534,7 +537,7 @@ class Nexus(object):
         reward = -sum(q.packet_drop_count for p in self.state.ports for q in p.queues)
         if self.incompetence:
             return (self.INCOMPETENCE_PENALTY_MULTIPLIER * reward) + self.INCOMPETENCE_PENALTY_ADDITIVE
-        return reward
+        return self.COMPETENCE_DROP_PENALTY_MULTIPLIER * reward
 
     # Transition from the current state to the next state and validate the transition
     # Return <reward, next_state>
@@ -994,7 +997,7 @@ class Critic(object):
 # The Replay Memory with Stochastic Prioritization / Uniform Random Sampling
 class Mnemosyne(object):
     # The default capacity of the PER memory
-    MEMORY_CAPACITY = 1e6
+    MEMORY_CAPACITY = 1e12
 
     # The default prioritization strategy within the PER memory
     PRIORITIZATION_STRATEGY = Prioritization.RANDOM
@@ -1124,7 +1127,7 @@ class Artemis(object):
     EXPLORATION_DECAY = 0.99
 
     # The default minimum allowed exploration factor - exploration-decay strategy only
-    MINIMUM_EXPLORATION_FACTOR = 0.1
+    MINIMUM_EXPLORATION_FACTOR = 0.2
 
     # The initialization sequence
     def __init__(self, _environment, _exploration_strategy, _action_dimension, _exploration_factor=None,
@@ -1220,7 +1223,8 @@ class Artemis(object):
                                      )
             # The non-random action here is a recommended state transition...(the switch API handles the +/-)
             # Restructuring the Actor-recommended transition...
-            return numpy.reshape([int(k) for k in numpy.squeeze(action)],
+            action = [0 if math.isnan(k) else k for k in numpy.squeeze(action)]
+            return numpy.reshape([int(k) for k in action],
                                  newshape=(1,
                                            1,
                                            self.action_dimension)
@@ -1267,16 +1271,16 @@ class Artemis(object):
 # The RL-agent defined in this class controls the Actor-Critic DDQN-PER framework
 class Apollo(object):
     # The batch size for sampling from the prioritized experiential replay memory
-    BATCH_SIZE = 64
+    BATCH_SIZE = 288
 
     # The default discount factor employed in the target Q-value estimation within the Critic
     DISCOUNT_FACTOR = 0.9
 
     # The default maximum number of iterations per episode
-    ITERATIONS_PER_EPISODE = 1e3
+    ITERATIONS_PER_EPISODE = 1e2
 
     # The default maximum number of episodes
-    MAXIMUM_NUMBER_OF_EPISODES = 1e5
+    MAXIMUM_NUMBER_OF_EPISODES = 1e4
 
     # The initialization sequence
     # Change Log: The environment_details member is no longer needed as I'm directly getting a reference to Nexus.
@@ -1735,14 +1739,14 @@ if __name__ == '__main__':
     #                                           dedicated_pool_size_per_port=dedicated_pool_size_per_port)
 
     # Actor Design
-    actor_design_details = ACTOR_DESIGN_DETAILS(learning_rate=1e-4,
-                                                target_tracker_coefficient=0.01,
-                                                batch_size=64)
+    actor_design_details = ACTOR_DESIGN_DETAILS(learning_rate=0.1,
+                                                target_tracker_coefficient=0.1,
+                                                batch_size=288)
     # Critic Design
-    critic_design_details = CRITIC_DESIGN_DETAILS(learning_rate=1e-5,
-                                                  target_tracker_coefficient=0.01)
+    critic_design_details = CRITIC_DESIGN_DETAILS(learning_rate=0.1,
+                                                  target_tracker_coefficient=0.1)
     # Replay Memory Design
-    replay_memory_design_details = REPLAY_MEMORY_DETAILS(memory_capacity=int(1e9),
+    replay_memory_design_details = REPLAY_MEMORY_DETAILS(memory_capacity=int(1e12),
                                                          # Random Sampling based replay strategy
                                                          prioritization_strategy=Prioritization.RANDOM,
                                                          revisitation_constraint_constant=None,
@@ -1755,7 +1759,7 @@ if __name__ == '__main__':
         action_dimension=action_dimension,
         exploration_factor=1.0,
         exploration_decay=0.99,
-        exploration_factor_min=0.1,
+        exploration_factor_min=0.2,
         # Ornstein-Uhlenbeck Exploration Noise: Populated the default parameters even though they're not essential...
         # ...in this use case
         x0=None,
@@ -1764,7 +1768,7 @@ if __name__ == '__main__':
         sigma=0.3,
         dt=1e-2)
     # Batch Size / Batch Area
-    batch_area = 64
+    batch_area = 288
     # Discount Factor
     discount_factor = 0.9
     # Iterations per Episode

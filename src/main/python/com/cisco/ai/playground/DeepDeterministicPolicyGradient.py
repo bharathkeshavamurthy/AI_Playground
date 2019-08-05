@@ -10,12 +10,13 @@
 
 
 # The imports
+# import pdb
 import gym
 import numpy
 import random
 import tflearn
 import tensorflow
-# from gym import wrappers
+from gym import wrappers
 from collections import deque
 
 
@@ -366,10 +367,12 @@ class Pendulum(object):
             # Create the Ornstein-Uhlenbeck noise process instance
             self.exploration_noise = Noise(_x0=None,
                                            _mu=numpy.zeros(self.action_dimension))
+
             # Enable monitoring and rendering of the environment reactions and the feedback process
-            # self.environment = wrappers.Monitor(self.environment,
-            #                                     self.monitor_directory,
-            #                                     force=True)
+            self.environment = wrappers.Monitor(self.environment,
+                                                self.monitor_directory,
+                                                force=True)
+
             # Start the Actor-Critic DDPG with Experiential Replay process
             self.train(session)
             # Stop the monitoring and rendering services
@@ -395,12 +398,14 @@ class Pendulum(object):
         self.critic.update_target_network_parameters()
         replay_memory = Memory(int(self.REPLAY_MEMORY_CAPACITY), self.RANDOM_SEED)
         for episode in range(self.MAXIMUM_NUMBER_OF_EPISODES):
+            # pdb.set_trace()
             state = self.environment.reset()
             episodic_reward = 0.0
             episodic_average_max_q_value = 0.0
             for iteration in range(self.ITERATIONS_PER_EPISODE):
-                # self.environment.render()
+                self.environment.render()
                 action = self.actor.predict(numpy.reshape(state, (1, self.state_dimension))) + self.exploration_noise()
+                # pdb.set_trace()
                 next_state, reward, termination, metadata = self.environment.step(action[0])
                 replay_memory.remember(numpy.reshape(state, (self.state_dimension,)),
                                        numpy.reshape(action, (self.action_dimension,)),
@@ -408,6 +413,7 @@ class Pendulum(object):
                                        numpy.reshape(next_state, (self.state_dimension,)),
                                        termination)
                 if len(replay_memory.memory) > self.MINI_BATCH_SIZE:
+                    # pdb.set_trace()
                     s_batch, a_batch, r_batch, s2_batch, t_batch = replay_memory.replay(self.MINI_BATCH_SIZE)
                     target_q = self.critic.predict_target(s2_batch,
                                                           self.actor.predict_targets(s2_batch))
@@ -430,6 +436,7 @@ class Pendulum(object):
                 state = next_state
                 episodic_reward += reward
                 if termination:
+                    # pdb.set_trace()
                     summary = session.run(summary_ops,
                                           feed_dict={
                                               summary_variables[0]: episodic_reward,

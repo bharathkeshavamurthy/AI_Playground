@@ -1,6 +1,7 @@
 # |Bleeding-Edge Productions|
 # This entity encapsulates an intelligent model to predict hourly pollution indices using RNNs in TensorFlow.
-# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ].
+# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ] by...
+# ...determining the value drift of design and operation critical settings across time.
 # Author: Bharath Keshavamurthy {bkeshava}
 # Organization: DC NX-OS, CISCO Systems Inc.
 # Copyright (c) 2019. All Rights Reserved.
@@ -48,7 +49,7 @@ class RNNPollutionIndexAnalysis(object):
     BATCH_SIZE = 85
 
     # Size of the buffer used for shuffling the sequences during batching, before model training
-    BUFFER_SIZE = 1050
+    BUFFER_SIZE = 8500
 
     # The pragmatic limits of the pollution indices
     PRAGMATIC_POLLUTION_INDEX_LIMITS = namedtuple('Limits',
@@ -57,16 +58,16 @@ class RNNPollutionIndexAnalysis(object):
                                                    'precision'])
 
     # The length of the look-back context
-    # A lookback context length of a week (24 hours * 7 days a week = 168 hours => 168 examples)
-    LOOK_BACK_CONTEXT_LENGTH = 168
+    # A lookback context length of four days (24 hours per day * 4 days = 96 hours of look-back)
+    LOOK_BACK_CONTEXT_LENGTH = 96
 
     # The length of the look-ahead predictions = The length of the test data set
-    # 24 hours of look-ahead => Use the context of a week to determine what happened a day into the future
-    LOOK_AHEAD_SIZE = 24
+    # 10 hours of look-ahead => Use the context of a day to determine what happens 10 hours into the future
+    LOOK_AHEAD_SIZE = 10
 
     # The size of the projected vector space
     # A lower dimensional, dense, continuous vector space
-    PROJECTED_VECTOR_SIZE = 2048
+    PROJECTED_VECTOR_SIZE = 3200
 
     # The checkpoint directory
     CHECKPOINT_DIRECTORY = './checkpoints'
@@ -78,16 +79,16 @@ class RNNPollutionIndexAnalysis(object):
     CHECKPOINT_TRIGGER_FACTOR = 1000
 
     # The number of units in the first RNN layer
-    NUMBER_OF_RNN_UNITS_1 = 4096
+    NUMBER_OF_RNN_UNITS_1 = 4800
 
     # The number of units in the second RNN layer
-    NUMBER_OF_RNN_UNITS_2 = 2048
+    NUMBER_OF_RNN_UNITS_2 = 3200
 
     # The number of units in the third RNN layer
-    NUMBER_OF_RNN_UNITS_3 = 1024
+    NUMBER_OF_RNN_UNITS_3 = 1600
 
     # Training data limit
-    TRAINING_DATA_LIMIT = 43776
+    TRAINING_DATA_LIMIT = 43790
 
     # Plotly Scatter mode
     PLOTLY_SCATTER_MODE = 'lines+markers'
@@ -150,24 +151,24 @@ class RNNPollutionIndexAnalysis(object):
         print('[INFO] RNNPollutionIndexAnalysis Initialization: Data Visualization Figure is available at {}'.format(
             initial_fig_url
         ))
-        # The data set for training - [0, 43775]
+        # The data set for training - [0, 43790)
         self.pollution_indices_training = self.pollution_indices.values[:self.TRAINING_DATA_LIMIT]
         # Integer mapped training data
         self.training_data = numpy.array(
             [self.vocabulary_to_integer_mapping[x] for x in self.pollution_indices_training]
         )
-        # The data set for testing - [43776 43799]
+        # The data set for testing - [43790 43799]
         self.dates_testing = self.dates[self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         self.pollution_indices_testing = self.pollution_indices.values[
                                          self.TRAINING_DATA_LIMIT:self.TRAINING_DATA_LIMIT + self.LOOK_AHEAD_SIZE]
         # Create individual data samples and convert the data into sequences of <lookback_context_length>
-        # Sequences of length 169 will be created
+        # Sequences of length 97 will be created
         self.sequenced_data = tensorflow.data.Dataset.from_tensor_slices(self.training_data).batch(
             self.LOOK_BACK_CONTEXT_LENGTH + 1,
             drop_remainder=True)
         # Split the data into inputs and targets
         # Shuffle the data and generate batches of size 85
-        # <Input is of length 168> and <Target is right shifted by one along the time axis and is of length 168>
+        # <Input is of length 96> and <Target is right shifted by one along the time axis and is of length 96>
         self.split_dataset = self.sequenced_data.map(lambda x: (x[:-1],
                                                                 x[1:])).shuffle(
             self.BUFFER_SIZE).batch(self.BATCH_SIZE,

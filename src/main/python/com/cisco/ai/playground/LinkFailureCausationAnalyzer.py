@@ -89,7 +89,7 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (24.0, -62.0)
+        self.initial_weights = (24.0, 0.24)
         # The intercept constraint in the given linear inequality, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -808,7 +808,7 @@ class LinkFailureCausationAnalyzer(object):
                     self.competent_classifiers.append(classifier)
                     # Start the explanation sequence
                     explanation = self.get_interpretable_explanation(classifier)
-                    if explanation is None:
+                    if explanation is None or len(explanation) == 0:
                         print(
                             '[ERROR] LinkFailureCausationAnalyzer Explanation: Something went wrong while developing '
                             'the interpretation. Please refer to the earlier logs for more information '
@@ -822,9 +822,17 @@ class LinkFailureCausationAnalyzer(object):
                               'local curve fitting is [{}] and whose respective associated weights '
                               'are [{}].'.format(classifier.__class__.__name__,
                                                  classifier_id,
-                                                 explanation.features,
-                                                 explanation.loss,
-                                                 explanation.parameters))
+                                                 explanation[0].features,
+                                                 explanation[0].loss,
+                                                 explanation[0].parameters))
+                        print('[INFO] LinkFailureCausationAnalyzer Explanation: The relevance of the locally '
+                              'interpretable weighted models is given below in the form of a ranked list:\n')
+                        # Print a ranked list of the best locally interpretable models for the prediction under analysis
+                        for k in range(len(explanation)):
+                            print('{}. Causes: {} | Loss: {} | Weights: {}'.format(k + 1,
+                                                                                   explanation[k].features,
+                                                                                   explanation[k].loss,
+                                                                                   explanation[k].parameters))
                 else:
                     self.status = False
                 print('[INFO] LinkFailureCausationAnalyzer Initialization: '
@@ -958,9 +966,10 @@ class LinkFailureCausationAnalyzer(object):
               'Completed locally interpretable linear model analyses for all possible '
               'feature family tuples of length {}. '
               'Finding the best explanation among these analyzed models...'.format(self.interpretable_features_count))
-        best_model = min(model_results_collection,
-                         key=lambda x: x.loss)
-        return best_model
+        # Return a sorted list of models in the increasing order of their loss function
+        ranked_collection_of_models = sorted(model_results_collection,
+                                             key=lambda x: x.loss)
+        return ranked_collection_of_models
 
     # Evaluate the cost function / loss at the current point in $\mathbb{R}^{\kappa}$
     def evaluate_loss(self, parameter_vector):

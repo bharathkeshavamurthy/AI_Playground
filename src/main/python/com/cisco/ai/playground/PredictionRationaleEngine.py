@@ -89,7 +89,7 @@ class ProjectionGradientDescent(object):
         # The dimensionality of the problem
         self.dimensionality = _dimensionality
         # The initial weights [\theta_0 \theta_1 ...]
-        self.initial_weights = (60.0, 60.0)
+        self.initial_weights = (24.0, -62.0)
         # The intercept constraint in the given linear inequality constraint, i.e. the regularization constant
         self.intercept_constraint = _intercept_constraint
         # The default step size during training
@@ -949,7 +949,8 @@ class PredictionRationaleEngine(object):
               'Completed locally interpretable linear model analyses for all possible '
               'feature family tuples of length {}. '
               'Finding the best explanation among these analyzed models...'.format(self.interpretable_features_count))
-        ranked_models = sorted(model_results_collection, key=lambda x: x.loss)
+        ranked_models = sorted(model_results_collection,
+                               key=lambda x: x.loss)
         return ranked_models
 
     # Evaluate the cost function / loss at the current point in $\mathbb{R}^{\kappa}$
