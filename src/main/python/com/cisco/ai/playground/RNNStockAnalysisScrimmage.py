@@ -1,6 +1,7 @@
 # |Bleeding-Edge Productions|
 # This entity encapsulates an intelligent model to predict the stock prices of a company using RNNs in TensorFlow.
-# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ].
+# This model can be extended to predict link states in networks [ Link_Up Link_Up Link_Up Link_Down Link_Down ] by...
+# ...determining the value drift of design and operation critical settings across time.
 # Use a historical context of 3 months to predict the stock prices 10 days (two weeks) into the future.
 # ------------------------------------------Scrimmage variant-----------------------------------------------------------
 # Author: Bharath Keshavamurthy {bkeshava}
@@ -22,7 +23,7 @@ Change Log - 01-August-2019:
 3. Changing the embedding size to 3400 from 2600 for better lower-dimensional representation for the vocab of size 9900
 
 4. Changing the look-back context logic in the predict() routine - a converging and diverging context window for a
-heurisitic that works for this dataset
+heuristic that works for this dataset
 
 5. Added two new parameters - CONTEXT_TRIGGER and VARIATION_TRIGGER inline with the modifications to the context window
 logic

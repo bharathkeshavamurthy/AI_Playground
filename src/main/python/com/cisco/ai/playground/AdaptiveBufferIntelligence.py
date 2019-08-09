@@ -184,13 +184,16 @@ class Nexus(object):
     DEDICATED_POOL_SIZE_PER_PORT = 40
 
     # The penalty multiplier for competent transitions
-    COMPETENCE_DROP_PENALTY_MULTIPLIER = 25
+    # COMPETENCE_DROP_PENALTY_MULTIPLIER = 25
 
     # The penalty multiplier for invalid transitions, i.e. invalid actions
     INCOMPETENCE_PENALTY_MULTIPLIER = 1000
 
+    # Second layer of incompetence penalty multiplier
+    LAYERED_INCOMPETENCE_PENALTY_MULTIPLIER = 5
+
     # The penalty additive for invalid transitions, i.e. invalid actions
-    INCOMPETENCE_PENALTY_ADDITIVE = -100000
+    # INCOMPETENCE_PENALTY_ADDITIVE = -100000
 
     # The initial heavy penalty for recommending non-compliant actions
     # INITIAL_INCOMPETENCE_PENALTY = -1000
@@ -274,6 +277,8 @@ class Nexus(object):
         # A flag which indicated gross incompetence exhibited by the RL agent
         # If this flag is set to true, impose sky-high tariffs...
         self.incompetence = False
+        # How incompetent are you?
+        self.incompetence_delta = 0
         # A termination flag to indicate that the switch has been shut down
         self.shutdown = False
         # The initialization sequence has been completed...
@@ -504,7 +509,31 @@ class Nexus(object):
 
     # Validate the new state - check if it complies with the switch design, given the current state
     def validate(self, new_state):
+        # Reset the incompetence flag and the incompetence delta
+        self.incompetence = False
+        self.incompetence_delta = 0
         print('[DEBUG] Nexus validate: Validating the state transition of the underlying MDP...')
+
+        # Individual recommendation validity check...we'll progress deeper as we go further in this routine
+        self.incompetence = (lambda: False,
+                             lambda: True)[int(new_state.leftover_buffer_units_in_the_global_pool) < 0]()
+        self.incompetence_delta += (lambda: 0,
+                                    lambda: new_state.leftover_buffer_units_in_the_global_pool)[self.incompetence]()
+        # Ports Loop - i
+        for i in range(self.number_of_ports):
+            if int(new_state.ports[i].leftover_buffer_units_in_the_dedicated_pool) < 0:
+                self.incompetence = True
+                self.incompetence_delta += new_state.ports[i].leftover_buffer_units_in_the_dedicated_pool
+            # Queues Loop - j
+            for j in range(self.number_of_queues_per_port):
+                if int(new_state.ports[i].queues[j].allocated_buffer_units) < 0:
+                    self.incompetence = True
+                    self.incompetence_delta += new_state.ports[i].queues[j].allocated_buffer_units
+        if self.incompetence:
+            print('[ERROR] AdaptiveBufferIntelligence validate: HUUGE mistake - negative allocations are invalid!')
+            return False
+
+        # "Law of Conservation of Buffer Slots" check - a level deeper
         base_availability = self.global_pool_size + (self.dedicated_pool_size_per_port * self.number_of_ports)
         aspirational_availability = new_state.leftover_buffer_units_in_the_global_pool
         # Ports Loop - i
@@ -513,20 +542,30 @@ class Nexus(object):
             # Queues Loop - j
             for j in range(self.number_of_queues_per_port):
                 aspirational_availability += new_state.ports[i].queues[j].allocated_buffer_units
-        # Aspirational != Base Reality
+        # Aspirational != Base Reality => Please come back to reality FFS!
         if aspirational_availability != base_availability:
+            self.incompetence = True
+            self.incompetence_delta = -self.LAYERED_INCOMPETENCE_PENALTY_MULTIPLIER * (
+                abs(aspirational_availability - base_availability))
             print('[ERROR] Nexus validate: The number of buffer units in the new state does not meet the design '
                   'requirements for this switch.')
             return False
+
         # A deeper check - global pool compliance, dedicated pools compliance, individual queue-specific compliance
+        # Ports Loop - port
         for port in new_state.ports:
             port_specific_availability = port.leftover_buffer_units_in_the_dedicated_pool
+            # Queues Loop - queue
             for queue in port.queues:
                 port_specific_availability += queue.allocated_buffer_units
             if port_specific_availability < self.dedicated_pool_size_per_port:
                 self.incompetence = True
+                self.incompetence_delta += (port_specific_availability - self.dedicated_pool_size_per_port)
                 print('[WARN] Nexus validate: State transition denied! Incompetence is set to True.')
+            # A delayed check in order to evaluate the incompetence delta
+            if self.incompetence:
                 return False
+
         # Everything's perfectly compliant with the design
         return True
         # The state transition validation has been completed...
@@ -536,8 +575,8 @@ class Nexus(object):
         print('[DEBUG] Nexus reward: Evaluating the utility of the recommendation...')
         reward = -sum(q.packet_drop_count for p in self.state.ports for q in p.queues)
         if self.incompetence:
-            return (self.INCOMPETENCE_PENALTY_MULTIPLIER * reward) + self.INCOMPETENCE_PENALTY_ADDITIVE
-        return self.COMPETENCE_DROP_PENALTY_MULTIPLIER * reward
+            return self.INCOMPETENCE_PENALTY_MULTIPLIER * self.incompetence_delta
+        return reward
 
     # Transition from the current state to the next state and validate the transition
     # Return <reward, next_state>
@@ -1069,9 +1108,11 @@ class Mnemosyne(object):
         available_indices = [k for k in range(len(transition_probabilities))]
         sample = []
         for m in range(batch_size):
-            pilot_transition_index = min(available_indices,
+            pilot_transition_index = min([k for k in range(len(available_indices))],
                                          key=(
-                                             lambda idx: abs(transition_probabilities[idx] - sampling_probability)))
+                                             lambda idx: abs(
+                                                 transition_probabilities[
+                                                     available_indices[idx]] - sampling_probability)))
             sample.append(self.memory[pilot_transition_index])
             del available_indices[pilot_transition_index]
         return sample
@@ -1083,18 +1124,18 @@ class Mnemosyne(object):
         # TD_ERROR_PRIORITIZATION
         if self.prioritization_strategy == Prioritization.TD_ERROR_PRIORITIZATION:
             sample = sorted(self.memory,
-                            key=(lambda x: x[5]),
+                            key=(lambda x: x[4]),
                             reverse=True)[0:batch_size]
         # STOCHASTIC_PRIORITIZATION_PROPORTIONAL
         elif self.prioritization_strategy == Prioritization.STOCHASTIC_PRIORITIZATION_PROPORTIONAL:
             # p_i
-            transition_priorities = [numpy.abs(x[5]) + self.revisitation_constraint_constant for x in self.memory]
+            transition_priorities = [numpy.abs(x[4]) + self.revisitation_constraint_constant for x in self.memory]
             sample = self.generate_sample(transition_priorities=transition_priorities,
                                           batch_size=batch_size)
         # STOCHASTIC_PRIORITIZATION_RANK
         elif self.prioritization_strategy == Prioritization.STOCHASTIC_PRIORITIZATION_RANK:
             sorted_memory = sorted(self.memory,
-                                   key=(lambda x: numpy.abs(x[5])),
+                                   key=(lambda x: numpy.abs(x[4])),
                                    reverse=True)
             # p_i
             transition_priorities = [(1 / (k + 1)) for k in range(len(sorted_memory))]
@@ -1534,6 +1575,7 @@ class Apollo(object):
                                            td_error)
                         # Start the replay sequence for training
                         if len(mnemosyne.memory) >= self.batch_size:
+                            print('[DEBUG] Apollo start: Experiential Replay sequence started...!')
                             # Prioritization strategy specific replay
                             s_batch, a_batch, r_batch, s2_batch, td_error_batch = mnemosyne.replay(self.batch_size)
                             target_q = numpy.squeeze(critic.predict_targets(numpy.expand_dims(s2_batch,
@@ -1741,17 +1783,19 @@ if __name__ == '__main__':
     # Actor Design
     actor_design_details = ACTOR_DESIGN_DETAILS(learning_rate=0.1,
                                                 target_tracker_coefficient=0.1,
-                                                batch_size=288)
+                                                batch_size=32)
     # Critic Design
     critic_design_details = CRITIC_DESIGN_DETAILS(learning_rate=0.1,
                                                   target_tracker_coefficient=0.1)
     # Replay Memory Design
-    replay_memory_design_details = REPLAY_MEMORY_DETAILS(memory_capacity=int(1e12),
-                                                         # Random Sampling based replay strategy
-                                                         prioritization_strategy=Prioritization.RANDOM,
-                                                         revisitation_constraint_constant=None,
-                                                         prioritization_level=None,
-                                                         random_seed=666)
+    replay_memory_design_details = REPLAY_MEMORY_DETAILS(
+        memory_capacity=int(1e12),
+        # Random Sampling based replay strategy
+        prioritization_strategy=Prioritization.STOCHASTIC_PRIORITIZATION_RANK,
+        revisitation_constraint_constant=None,
+        prioritization_level=None,
+        random_seed=666
+    )
     # Exploration Strategy Design
     exploration_strategy_design_details = EXPLORATION_STRATEGY_DETAILS(
         # We're actually using an Exploration Decay based exploration strategy here...
@@ -1768,7 +1812,7 @@ if __name__ == '__main__':
         sigma=0.3,
         dt=1e-2)
     # Batch Size / Batch Area
-    batch_area = 288
+    batch_area = 32
     # Discount Factor
     discount_factor = 0.9
     # Iterations per Episode

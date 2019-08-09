@@ -61,6 +61,8 @@ from collections import namedtuple
 pandas.options.mode.chained_assignment = None
 
 # Plotly user account credentials for visualization
+# Go Here to sign in: https://plot.ly/feed/#/
+# And then, go to Settings in your home pa
 plotly.tools.set_credentials_file(username='bkeshava',
                                   api_key='RHqYrDdThygiJEPiEW5S')
 
@@ -675,6 +677,7 @@ class NeuralNetworkClassificationEngine(ClassificationTask):
                                optimizer=tensorflow.train.AdamOptimizer(),
                                metrics=['accuracy'])
             # Standard Training
+            # NOTE: Feed-Forward and Back-Propagation
             self.model.fit(self.training_features,
                            self.training_labels,
                            batch_size=self.BATCH_SIZE,
